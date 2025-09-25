@@ -2,6 +2,7 @@
 from fastapi import APIRouter, status, Response, Depends
 from app.services.auth_service import AuthService
 from app.config.database.session import get_db
+from app.config.redis_config import cache
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Dict, Any
@@ -97,4 +98,28 @@ async def database_health_check(
             "status": "unhealthy",
             "timestamp": datetime.now().isoformat(),
             "database": {"status": "unhealthy", "error": str(e)},
+        }
+
+
+@router.get("/health/cache")
+async def cache_health_check(response: Response) -> Dict[str, Any]:
+    """
+    Cache-specific health check endpoint
+    """
+    try:
+        cache_healthy = await cache.health_check()
+        if cache_healthy:
+            return {
+                "status": "healthy",
+                "timestamp": datetime.now().isoformat(),
+                "cache": {"status": "healthy"},
+            }
+        else:
+            raise Exception("Cache health check failed")
+    except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "cache": {"status": "unhealthy", "error": str(e)},
         }

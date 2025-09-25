@@ -1,10 +1,11 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
+import time
 
 from app.services.bbb_service import BBBService
 
@@ -22,20 +23,23 @@ from app.config.chat_manager import chat_manager
 from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
-import asyncio
+from app.config.redis_config import cache
 
-logger = get_logger("Twitch")
+logger = get_logger("Main")
 setting = get_settings()
 scheduler = AsyncIOScheduler()
 bbb_service = BBBService()
 twitch_client = TwitchIRCClient()
 
 
+# Add request logging middleware
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
     Lifespan context manager for the FastAPI application
     """
+    logger.info("=== APPLICATION STARTUP ===")
+
     # Startup: Configure OpenAPI schema
     openapi_schema = get_openapi(
         title="SpoutBreeze API",
@@ -62,12 +66,16 @@ async def lifespan(app: FastAPI):
     # Set the schema
     app.openapi_schema = openapi_schema
 
+    # Initialize Redis cache
+    await cache.connect()
+    logger.info("[cache] Redis cache connected")
+
     # Startup: schedule the IRC client
-    twitch_tasks = asyncio.gather(
-        twitch_client.connect(),
-        twitch_client.start_token_refresh_scheduler(),
-        return_exceptions=True,
-    )
+    # twitch_tasks = asyncio.gather(
+    #     twitch_client.connect(),
+    #     twitch_client.start_token_refresh_scheduler(),
+    #     return_exceptions=True,
+    # )
 
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
@@ -84,14 +92,22 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     logger.info("[Scheduler] BBB meeting cleanup job scheduled")
 
+    logger.info("=== APPLICATION STARTUP COMPLETE ===")
+
     yield  # App is running
 
+    logger.info("=== APPLICATION SHUTDOWN ===")
+    await cache.close()
+    logger.info("[cache] Redis cache connection closed")
+
     # Shutdown: cancel the IRC task
-    twitch_tasks.cancel()
-    try:
-        await twitch_tasks
-    except asyncio.CancelledError:
-        logger.info("[TwitchIRC] Connect task cancelled cleanly")
+    # twitch_tasks.cancel()
+    # try:
+    #     await twitch_tasks
+    # except asyncio.CancelledError:
+    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
+
+    logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
 
 app = FastAPI(
@@ -101,18 +117,28 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# @app.on_event("startup")
-# async def startup_event():
-#     """
-#     Schedule the Twitch IRC client to run in the background
-#     """
-#     asyncio.create_task(twitch_client.connect())
-#     print("[TwitchIRC] Scheduled background connect task")
+
+# Add request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    logger.info(f"Headers: {dict(request.headers)}")
+
+    response = await call_next(request)
+
+    process_time = time.time() - start_time
+    logger.info(
+        f"Request completed: {request.method} {request.url} - Status: {response.status_code} - Time: {process_time:.4f}s"
+    )
+
+    return response
 
 
 # Override the default Swagger UI to add OAuth support
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html():
+    logger.info("Swagger UI requested")
     return get_swagger_ui_html(
         openapi_url=app.openapi_url,
         title=app.title + " - Swagger UI",
@@ -134,6 +160,9 @@ async def custom_swagger_ui_html():
 
 origins = [
     "http://localhost:3000",  # Frontend URL in development
+    "http://127.0.0.1:3000",  # Alternative localhost
+    "http://localhost:8000",  # Backend self
+    "http://127.0.0.1:8000",  # Backend self alternative
     "http://spoutbreeze-frontend.spoutbreeze.svc.cluster.local:3000",  # Frontend URL in Kubernetes
     "https://frontend.67.222.155.30.nip.io:30443",  # Frontend URL
     "https://frontend.67.222.155.30.nip.io",  # Frontend URL without port
@@ -142,6 +171,7 @@ origins = [
     "https://backend.67.222.155.30.nip.io:30444",  # Backend URL
     "https://backend.67.222.155.30.nip.io",  # Backend URL without port
 ]
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -185,7 +215,20 @@ async def root():
     """
     Root endpoint that returns a welcome message
     """
-    return {"message": "Welcome to SpoutBreeze API"}
+    logger.info("Root endpoint accessed")
+    return {"message": "Welcome to SpoutBreeze API", "timestamp": time.time()}
+
+
+# Add a simple test endpoint
+@app.get("/api/test", tags=["Test"])
+async def test_endpoint():
+    """Test endpoint to verify API is working"""
+    logger.info("Test endpoint accessed")
+    return {
+        "status": "success",
+        "message": "API is working correctly",
+        "timestamp": time.time(),
+    }
 
 
 # Include routers
@@ -205,6 +248,7 @@ async def chat_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for chat messages
     """
+    logger.info("WebSocket connection requested")
     await chat_manager.connect(websocket)
     try:
         while True:

@@ -13,11 +13,11 @@ from app.models.event.event_schemas import (
     EventUpdate,
     JoinEventRequest,
 )
-from app.services.event_service import EventService
+from app.services.cached.event_service_cached import EventServiceCached
 from app.services.bbb_service import BBBService
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
-event_service = EventService()
+event_service = EventServiceCached()
 bbb_service = BBBService()
 
 
@@ -136,7 +136,9 @@ async def get_upcoming_events(
     try:
         events = await event_service.get_upcoming_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
+        event_responses = [
+            EventResponse.model_validate(event.__dict__) for event in events
+        ]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -151,7 +153,9 @@ async def get_past_events(
     try:
         events = await event_service.get_past_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
+        event_responses = [
+            EventResponse.model_validate(event.__dict__) for event in events
+        ]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -166,7 +170,9 @@ async def get_live_events(
     try:
         events = await event_service.get_live_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
+        event_responses = [
+            EventResponse.model_validate(event.__dict__) for event in events
+        ]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -210,7 +216,9 @@ async def get_all_events(
     try:
         events = await event_service.get_all_events(db=db)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
+        event_responses = [
+            EventResponse.model_validate(event.__dict__) for event in events
+        ]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except ValueError as e:
         # Handle the case where no events are found
@@ -274,7 +282,9 @@ async def get_events_by_channel(
             channel_id=channel_id,
         )
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
+        event_responses = [
+            EventResponse.model_validate(event.__dict__) for event in events
+        ]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except ValueError as e:
         # Handle the case where the channel ID is not found

@@ -76,16 +76,14 @@ async def twitch_login(current_user: User = Depends(get_current_user)):
 
 @router.get("/twitch/token-status")
 async def get_token_status(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Get current user's token status"""
     try:
         stmt = (
             select(TwitchToken)
             .where(
-                TwitchToken.user_id == current_user.id,
-                TwitchToken.is_active == True
+                TwitchToken.user_id == current_user.id, TwitchToken.is_active == True
             )
             .order_by(TwitchToken.created_at.desc())
         )
@@ -97,7 +95,7 @@ async def get_token_status(
             return {
                 "error": "No active token found for this user",
                 "user_id": str(current_user.id),
-                "has_token": False
+                "has_token": False,
             }
 
         current_time = datetime.now()
@@ -111,9 +109,10 @@ async def get_token_status(
             "current_time": current_time.isoformat(),
             "time_until_expiry": str(time_until_expiry),
             "is_expired": token_record.expires_at <= current_time,
-            "expires_soon": token_record.expires_at <= current_time + timedelta(minutes=5),
+            "expires_soon": token_record.expires_at
+            <= current_time + timedelta(minutes=5),
             "has_refresh_token": bool(token_record.refresh_token),
-            "created_at": token_record.created_at.isoformat()
+            "created_at": token_record.created_at.isoformat(),
         }
 
     except Exception as e:
@@ -122,8 +121,7 @@ async def get_token_status(
 
 @router.delete("/twitch/token")
 async def revoke_twitch_token(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Revoke/deactivate the current user's Twitch token"""
     try:
@@ -140,42 +138,42 @@ async def revoke_twitch_token(
         return {
             "message": "Twitch token(s) revoked successfully",
             "user_id": str(current_user.id),
-            "tokens_deactivated": tokens_deactivated
+            "tokens_deactivated": tokens_deactivated,
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Token revocation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Token revocation failed: {str(e)}"
+        )
 
 
 @router.post("/twitch/connect")
 async def connect_to_twitch(
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Start user-specific Twitch IRC connection"""
     try:
         # Check if user has token
-        stmt = (
-            select(TwitchToken)
-            .where(
-                TwitchToken.user_id == current_user.id,
-                TwitchToken.is_active == True,
-                TwitchToken.expires_at > datetime.now()
-            )
+        stmt = select(TwitchToken).where(
+            TwitchToken.user_id == current_user.id,
+            TwitchToken.is_active == True,
+            TwitchToken.expires_at > datetime.now(),
         )
         result = await db.execute(stmt)
         token = result.scalars().first()
-        
+
         if not token:
             raise HTTPException(status_code=400, detail="No active Twitch token found")
-        
+
         # Start connection for this user
         success = await twitch_service.start_connection_for_user(str(current_user.id))
-        
+
         return {
-            "message": "Twitch IRC connection started" if success else "Failed to start connection",
+            "message": "Twitch IRC connection started"
+            if success
+            else "Failed to start connection",
             "user_id": str(current_user.id),
-            "connected": success
+            "connected": success,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

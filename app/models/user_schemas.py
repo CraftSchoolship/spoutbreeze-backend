@@ -44,10 +44,12 @@ class UpdateProfileRequest(BaseModel):
 
 
 class UpdateUserRoleRequest(BaseModel):
-    role: str = Field(..., min_length=1, max_length=50, description="The new role for the user")
+    role: str = Field(
+        ..., min_length=1, max_length=50, description="The new role for the user"
+    )
 
-    @field_validator('role')
+    @field_validator("role")
     def validate_role(cls, v):
         if not v or not v.strip():
-            raise ValueError('Role cannot be empty')
+            raise ValueError("Role cannot be empty")
         return v.strip().lower()

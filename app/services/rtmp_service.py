@@ -69,16 +69,22 @@ class RtmpEndpointService:
         except IntegrityError as e:
             await db.rollback()
             error_msg = str(e.orig)
-            
+
             if "stream_endpoints_stream_key_key" in error_msg:
-                logger.warning(f"Duplicate stream key attempted: {rtmp_endpoints.stream_key}")
-                raise ValueError("Stream key already exists. Please use a different stream key.")
+                logger.warning(
+                    f"Duplicate stream key attempted: {rtmp_endpoints.stream_key}"
+                )
+                raise ValueError(
+                    "Stream key already exists. Please use a different stream key."
+                )
             elif "stream_endpoints_title_key" in error_msg or "title" in error_msg:
                 logger.warning(f"Duplicate title attempted: {rtmp_endpoints.title}")
                 raise ValueError("Title already exists. Please use a different title.")
             else:
                 logger.error(f"Integrity constraint violation: {error_msg}")
-                raise ValueError("A unique constraint was violated. Please check your input data.")
+                raise ValueError(
+                    "A unique constraint was violated. Please check your input data."
+                )
         except Exception as e:
             logger.error(f"Error creating stream settings: {e}")
             await db.rollback()

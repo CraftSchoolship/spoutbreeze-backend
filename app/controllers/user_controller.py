@@ -2,13 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Path
 from typing import List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from app.services.auth_service import AuthService
 from app.config.database.session import get_db
 from app.models.user_models import User
-from app.models.user_schemas import UserResponse, UpdateProfileRequest, UpdateUserRoleRequest
+from app.models.user_schemas import (
+    UserResponse,
+    UpdateProfileRequest,
+    UpdateUserRoleRequest,
+)
 from app.config.logger_config import logger
 from app.config.settings import get_settings
+from app.services.cached.user_service_cached import user_service_cached
+from app.config.redis_config import cache
 import uuid
 
 
@@ -23,7 +28,7 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """
-    Get the current authenticated user from HTTP-only cookie
+    Get the current authenticated user from HTTP-only cookie with caching
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -46,10 +51,8 @@ async def get_current_user(
         if keycloak_id is None:
             raise credentials_exception
 
-        # Get user from database
-        stmt = select(User).where(User.keycloak_id == keycloak_id)
-        result = await db.execute(stmt)
-        user = result.scalars().first()
+        # Get user from database with caching
+        user = await user_service_cached.get_user_by_keycloak_id_cached(keycloak_id, db)
 
         if user is None:
             raise credentials_exception
@@ -70,11 +73,9 @@ async def get_current_user(
 
 def get_current_user_roles(current_user: User = Depends(get_current_user)) -> List[str]:
     """
-    Get roles from the database (stored from Keycloak)
+    Get roles from the database (stored from Keycloak) with caching
     """
-    user_roles = (
-        current_user.get_roles_list()
-    )  # Use helper method to convert string to list
+    user_roles = current_user.get_roles_list()
     logger.info(f"User {current_user.username} roles: {user_roles}")
     return user_roles
 
@@ -114,13 +115,7 @@ def require_any_role(*required_roles: str):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     """
-    Get the current user information
-
-    Args:
-        current_user: The current user information
-
-    Returns:
-        The current user information
+    Get the current user information (cached via get_current_user)
     """
     return current_user
 
@@ -132,7 +127,7 @@ async def update_user_profile(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Update the current user's profile information
+    Update the current user's profile information with cache invalidation
     """
     request_id = str(uuid.uuid4())
     logger.info(
@@ -169,17 +164,16 @@ async def update_user_profile(
             f"[{request_id}] Updating database profile for user: {current_user.username}"
         )
 
-        # Update user in the database
-        for field, value in profile_update_data.items():
-            setattr(current_user, field, value)
-
-        await db.commit()
-        await db.refresh(current_user)
+        # Update user in the database using cached service
+        updated_user = await user_service_cached.update_user_profile(
+            user_id=current_user.id, updates=profile_update_data, db=db
+        )
 
         logger.info(
             f"[{request_id}] Profile update completed successfully for user: {current_user.username}"
         )
-        return current_user
+        return updated_user
+
     except HTTPException as e:
         await db.rollback()
         logger.error(f"[{request_id}] HTTP error during profile update: {str(e)}")
@@ -202,22 +196,19 @@ async def get_users(
     _: bool = Depends(require_role("admin")),
 ):
     """
-    Get a list of users (Admin only)
-
-    Args:
-        skip: Number of users to skip
-        limit: Maximum number of users to return
-        db: The database session
-        current_user: The current user information
-
-    Returns:
-        A list of users
+    Get a list of users (Admin only) with caching
     """
     logger.info(f"Admin user {current_user.username} is requesting users list")
-    stmt = select(User).offset(skip).limit(limit)
-    result = await db.execute(stmt)
-    users = result.scalars().all()
-    return users
+
+    try:
+        users = await user_service_cached.get_users_list_cached(skip, limit, db)
+        return users
+    except Exception as e:
+        logger.error(f"Error fetching users list: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch users list",
+        )
 
 
 @router.get("/users/{user_id}", response_model=UserResponse)
@@ -228,28 +219,28 @@ async def get_user_by_id(
     _: bool = Depends(require_any_role("admin", "moderator")),
 ):
     """
-    Get a user by ID (Admin only)
-
-    Args:
-        user_id: The ID of the user to get
-        db: The database session
-        current_user: The current user information
-
-    Returns:
-        The requested user information
+    Get a user by ID (Admin/Moderator only) with caching
     """
     logger.info(f"User {current_user.username} is requesting user {user_id}")
-    stmt = select(User).where(User.id == user_id)
-    result = await db.execute(stmt)
-    user = result.scalars().first()
 
-    if not user:
+    try:
+        user = await user_service_cached.get_user_by_id_cached(user_id, db)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"User with ID {user_id} not found",
+            )
+
+        return user
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching user {user_id}: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch user",
         )
-
-    return user
 
 
 @router.put("/users/{user_id}/role", response_model=UserResponse)
@@ -261,16 +252,7 @@ async def update_user_role(
     _: bool = Depends(require_role("admin")),
 ):
     """
-    Update a user's role (Admin only)
-
-    Args:
-        user_id: The ID of the user to update
-        role_data: The new role data
-        db: The database session
-        current_user: The current user information
-
-    Returns:
-        The updated user information
+    Update a user's role (Admin only) with cache invalidation
     """
     request_id = str(uuid.uuid4())
     logger.info(
@@ -278,10 +260,8 @@ async def update_user_role(
     )
 
     try:
-        # Get the target user
-        stmt = select(User).where(User.id == user_id)
-        result = await db.execute(stmt)
-        target_user = result.scalars().first()
+        # Get the target user using cached service
+        target_user = await user_service_cached.get_user_by_id_cached(user_id, db)
 
         if not target_user:
             raise HTTPException(
@@ -297,7 +277,7 @@ async def update_user_role(
                 detail="Role cannot be empty",
             )
 
-        # Add validation for allowed roles (optional but recommended)
+        # Add validation for allowed roles
         allowed_roles = ["admin", "moderator"]
         if new_role not in allowed_roles:
             raise HTTPException(
@@ -305,7 +285,7 @@ async def update_user_role(
                 detail=f"Role '{new_role}' is not allowed. Allowed roles: {', '.join(allowed_roles)}",
             )
 
-        # Prevent admin from changing their own role (optional security measure)
+        # Prevent admin from changing their own role
         if target_user.id == current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -316,14 +296,12 @@ async def update_user_role(
             f"[{request_id}] Updating role in Keycloak for user: {target_user.keycloak_id}"
         )
 
-        # Update role in Keycloak first - this will now throw more specific errors
+        # Update role in Keycloak first
         try:
             auth_service.update_user_role(
-                user_id=target_user.keycloak_id, 
-                new_role=new_role
+                user_id=target_user.keycloak_id, new_role=new_role
             )
         except HTTPException as e:
-            # Re-raise HTTP exceptions from auth_service with better context
             logger.error(f"[{request_id}] Keycloak role update failed: {e.detail}")
             raise HTTPException(
                 status_code=e.status_code,
@@ -334,16 +312,15 @@ async def update_user_role(
             f"[{request_id}] Updating role in database for user: {target_user.username}"
         )
 
-        # Update role in the database
-        target_user.roles = new_role
-
-        await db.commit()
-        await db.refresh(target_user)
+        # Update role in the database using cached service
+        updated_user = await user_service_cached.update_user_role(
+            user_id=user_id, new_role=new_role, db=db
+        )
 
         logger.info(
             f"[{request_id}] Role update completed successfully for user: {target_user.username}"
         )
-        return target_user
+        return updated_user
 
     except HTTPException as e:
         await db.rollback()
@@ -355,4 +332,64 @@ async def update_user_role(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user role",
+        )
+
+
+# Add cache management endpoints for admin users
+@router.post("/cache/invalidate/{user_id}")
+async def invalidate_user_cache(
+    user_id: UUID = Path(..., title="The ID of the user to invalidate cache for"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),  # Properly inject the database session
+    _: bool = Depends(require_role("admin")),
+):
+    """
+    Manually invalidate cache for a specific user (Admin only)
+    """
+    try:
+        # Get user to find keycloak_id using the properly injected db session
+        user = await user_service_cached.get_user_by_id_cached(user_id, db)
+        keycloak_id = user.keycloak_id if user else None
+
+        await user_service_cached.invalidate_user_cache(user_id, keycloak_id)
+
+        logger.info(
+            f"Admin {current_user.username} invalidated cache for user {user_id}"
+        )
+        return {"message": f"Cache invalidated for user {user_id}"}
+    except Exception as e:
+        logger.error(f"Failed to invalidate cache for user {user_id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to invalidate user cache",
+        )
+
+
+@router.get("/cache/stats")
+async def get_cache_stats(
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(require_role("admin")),
+):
+    """
+    Get cache statistics (Admin only)
+    """
+    try:
+        # This is a simple implementation - Redis has more detailed stats available
+        cache_healthy = await cache.health_check()
+
+        return {
+            "cache_status": "healthy" if cache_healthy else "unhealthy",
+            "redis_connected": cache.redis_client is not None,
+            "cache_patterns": [
+                "user_profile:*",
+                "user_keycloak:*",
+                "user_roles:*",
+                "users_list:*",
+            ],
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cache stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get cache statistics",
         )

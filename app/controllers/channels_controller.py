@@ -11,11 +11,11 @@ from app.models.channel.channels_schemas import (
     ChannelListResponse,
     ChannelUpdate,
 )
-from app.services.channels_service import ChannelsService
+from app.services.cached.channels_service_cached import ChannelsServiceCached
 from app.config.logger_config import logger
 
 router = APIRouter(prefix="/api/channels", tags=["Channels"])
-channels_service = ChannelsService()
+channels_service = ChannelsServiceCached()
 
 
 @router.post("/", response_model=ChannelResponse)

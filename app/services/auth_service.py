@@ -1,7 +1,7 @@
 import requests
 from fastapi import HTTPException, status
 from jose import jwt
-from app.config.settings import keycloak_openid, keycloak_admin, get_settings
+from app.config.settings import keycloak_openid, get_settings
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, Union, List
 import os
@@ -426,7 +426,9 @@ class AuthService:
             )
             response.raise_for_status()
 
-            logger.info(f"Successfully removed {len(roles)} client roles from user {user_id}")
+            logger.info(
+                f"Successfully removed {len(roles)} client roles from user {user_id}"
+            )
         except Exception as e:
             logger.error(f"Failed to remove client roles: {str(e)}")
             raise
@@ -449,7 +451,9 @@ class AuthService:
             )
             response.raise_for_status()
 
-            logger.info(f"Successfully assigned client role {role['name']} to user {user_id}")
+            logger.info(
+                f"Successfully assigned client role {role['name']} to user {user_id}"
+            )
         except Exception as e:
             logger.error(f"Failed to assign client role: {str(e)}")
             raise
@@ -472,11 +476,15 @@ class AuthService:
 
             # Get current client roles for the user
             current_roles = self._get_user_client_roles(admin_token, user_id, client_id)
-            logger.info(f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}")
+            logger.info(
+                f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}"
+            )
 
             # Remove all existing client roles for this client
             if current_roles:
-                self._remove_user_client_roles(admin_token, user_id, client_id, current_roles)
+                self._remove_user_client_roles(
+                    admin_token, user_id, client_id, current_roles
+                )
                 logger.info(f"Removed existing client roles from user {user_id}")
 
             # Get the new role information
@@ -484,9 +492,13 @@ class AuthService:
             logger.info(f"Found role info for {new_role}: {new_role_info}")
 
             # Assign the new client role
-            self._assign_user_client_role(admin_token, user_id, client_id, new_role_info)
+            self._assign_user_client_role(
+                admin_token, user_id, client_id, new_role_info
+            )
 
-            logger.info(f"Successfully updated user {user_id} client role to {new_role}")
+            logger.info(
+                f"Successfully updated user {user_id} client role to {new_role}"
+            )
 
         except Exception as e:
             logger.error(f"Failed to update user role in Keycloak: {str(e)}")

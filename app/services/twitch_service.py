@@ -4,6 +4,7 @@ from app.config.logger_config import get_logger
 
 logger = get_logger("TwitchService")
 
+
 class TwitchService:
     def __init__(self) -> None:
         self._user_connections: Dict[str, TwitchIRCClient] = {}
@@ -17,15 +18,16 @@ class TwitchService:
 
             # Create user-specific client with required user_id
             client = TwitchIRCClient(user_id=user_id)
-            
+
             # Start connection in background
             import asyncio
+
             asyncio.create_task(client.connect())
-            
+
             self._user_connections[user_id] = client
             logger.info(f"Started TwitchIRC connection for user {user_id}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to start TwitchIRC for user {user_id}: {e}")
             return False
@@ -61,6 +63,7 @@ class TwitchService:
                 logger.error(f"Error disconnecting user {user_id}: {e}")
         self._user_connections.clear()
         logger.info("All Twitch connections disconnected")
+
 
 # Global instance
 twitch_service = TwitchService()

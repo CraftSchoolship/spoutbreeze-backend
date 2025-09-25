@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Body, Depends, Request, BackgroundTasks, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.database.session import get_db
-from app.services.bbb_service import BBBService
-from app.services.rtmp_service import RtmpEndpointService
+
+# Replace with cached services:
+from app.services.cached.bbb_service_cached import BBBServiceCached
+from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
 from app.models.bbb_schemas import (
     CreateMeetingRequest,
     JoinMeetingRequest,
@@ -16,7 +18,8 @@ from app.models.user_models import User
 from uuid import UUID
 
 router = APIRouter(prefix="/api/bbb", tags=["BigBlueButton"])
-bbb_service = BBBService()
+# bbb_service = BBBService()
+bbb_service = BBBServiceCached()
 
 
 @router.get("/")
@@ -55,27 +58,27 @@ async def end_meeting(
 
 
 @router.post("/is-meeting-running")
-def is_meeting_running(request: IsMeetingRunningRequest = Body(...)):
+async def is_meeting_running(request: IsMeetingRunningRequest = Body(...)):
     """Check if a meeting is running."""
-    return bbb_service.is_meeting_running(request=request)
+    return await bbb_service.is_meeting_running_cached(request=request)
 
 
 @router.post("/get-meeting-info")
-def get_meeting_info(request: GetMeetingInfoRequest = Body(...)):
+async def get_meeting_info(request: GetMeetingInfoRequest = Body(...)):
     """Get detailed information about a meeting."""
-    return bbb_service.get_meeting_info(request=request)
+    return await bbb_service.get_meeting_info_cached(request=request)
 
 
 @router.get("/get-meetings")
-def get_meetings():
+async def get_meetings():
     """Get the list of all meetings."""
-    return bbb_service.get_meetings()
+    return await bbb_service.get_meetings_cached()
 
 
 @router.post("/get-recordings")
-def get_recordings(request: GetRecordingRequest = Body(...)):
+async def get_recordings(request: GetRecordingRequest = Body(...)):
     """Get the list of all recordings."""
-    return bbb_service.get_recordings(request=request)
+    return await bbb_service.get_recordings_cached(request=request)
 
 
 @router.get("/callback/meeting-ended")
@@ -121,12 +124,10 @@ async def get_stream_endpoints_proxy(
     Returns all available stream endpoints.
     """
     try:
-        # Get all available stream endpoints
-        rtmp_service = RtmpEndpointService()
+        # Use cached RTMP service
+        rtmp_service = RtmpEndpointServiceCached()
         stream_endpoints = await rtmp_service.get_all_rtmp_endpoints(db=db)
-
         return stream_endpoints
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

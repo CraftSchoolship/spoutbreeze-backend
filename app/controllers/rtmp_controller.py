@@ -12,10 +12,10 @@ from app.models.stream_schemas import (
     CreateRtmpEndpointCreate,
     RtmpEndpointDeleteResponse,
 )
-from app.services.rtmp_service import RtmpEndpointService
+from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
 
 router = APIRouter(prefix="/api/stream-endpoint", tags=["Stream Endpoints"])
-rtmp_service = RtmpEndpointService()
+rtmp_service = RtmpEndpointServiceCached()
 
 
 @router.post("/create", response_model=RtmpEndpointResponse)
