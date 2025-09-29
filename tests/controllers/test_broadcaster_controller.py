@@ -3,6 +3,30 @@ from httpx import AsyncClient
 from uuid import uuid4
 
 
+# Autouse fixture: every test gets the mocked broadcaster
+@pytest.fixture(autouse=True)
+def mock_broadcaster(monkeypatch):
+    from app.controllers import broadcaster_controller
+
+    async def fake_start_broadcasting(meeting_id, rtmp_url, stream_key, password, bbb_service):
+        return {
+            "status": "success",
+            "message": "Broadcaster started successfully",
+            "debug": {
+                "meeting_id": meeting_id,
+                "rtmp_url": rtmp_url,
+                "stream_key": stream_key,
+            },
+        }
+
+    monkeypatch.setattr(
+        broadcaster_controller.broadcaster_service,
+        "start_broadcasting",
+        fake_start_broadcasting,
+    )
+    yield
+
+
 class TestBroadcasterController:
     """Test cases for broadcaster controller"""
 
@@ -352,3 +376,112 @@ class TestBroadcasterController:
         response = await client.post("/api/bbb/broadcaster", json=payload)
 
         assert response.status_code == 422  # Validation error
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "meeting_id,rtmp_url,stream_key,password",
+        [
+            ("meeting-123", "rtmp://live.twitch.tv/live", "test-stream-key", "moderator-password"),
+            ("meeting-123", "rtmp://a.rtmp.youtube.com/live2", "youtube-stream-key", "moderator-password"),
+            ("meeting-123", "rtmps://live-api-s.facebook.com:443/rtmp", "facebook-stream-key", "moderator-password"),
+            ("meeting-🚀", "rtmp://live.twitch.tv/live", "key-🔑", "password-🔒"),
+            ("meeting-123-ñáéíóú", "rtmp://live.twitch.tv/live", "test-key-!@#$%^&*()", "pass-word-123!@#"),
+            ("meeting-long-key", "rtmp://live.twitch.tv/live", "a" * 1000, "moderator-password"),
+        ],
+    )
+    async def test_broadcaster_success_variants(
+        self, client: AsyncClient, meeting_id, rtmp_url, stream_key, password
+    ):
+        payload = {
+            "meeting_id": meeting_id,
+            "rtmp_url": rtmp_url,
+            "stream_key": stream_key,
+            "password": password,
+        }
+        r = await client.post("/api/bbb/broadcaster", json=payload)
+        assert r.status_code == 200
+        data = r.json()
+        assert data["status"] == "success"
+        assert data["message"] == "Broadcaster started successfully"
+
+    @pytest.mark.asyncio
+    async def test_validation_missing_all(self, client: AsyncClient):
+        r = await client.post("/api/bbb/broadcaster", json={})
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_validation_missing_stream_key(self, client: AsyncClient):
+        r = await client.post(
+            "/api/bbb/broadcaster",
+            json={
+                "meeting_id": "m1",
+                "rtmp_url": "rtmp://live.twitch.tv/live",
+                "password": "p",
+            },
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_validation_missing_meeting_id(self, client: AsyncClient):
+        r = await client.post(
+            "/api/bbb/broadcaster",
+            json={
+                "rtmp_url": "rtmp://live.twitch.tv/live",
+                "stream_key": "k",
+                "password": "p",
+            },
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_validation_null_fields(self, client: AsyncClient):
+        r = await client.post(
+            "/api/bbb/broadcaster",
+            json={
+                "meeting_id": None,
+                "rtmp_url": None,
+                "stream_key": None,
+                "password": None,
+            },
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_malformed_json(self, client: AsyncClient):
+        r = await client.post(
+            "/api/bbb/broadcaster",
+            content="not-json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_extra_fields_ignored(self, client: AsyncClient):
+        r = await client.post(
+            "/api/bbb/broadcaster",
+            json={
+                "meeting_id": "m1",
+                "rtmp_url": "rtmp://live.twitch.tv/live",
+                "stream_key": "k",
+                "password": "p",
+                "extra": "ignored",
+                "another": 123,
+            },
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests(self, client: AsyncClient):
+        import asyncio
+
+        payload = {
+            "meeting_id": "m1",
+            "rtmp_url": "rtmp://live.twitch.tv/live",
+            "stream_key": "k",
+            "password": "p",
+        }
+        results = await asyncio.gather(
+            *[client.post("/api/bbb/broadcaster", json=payload) for _ in range(3)]
+        )
+        assert all(r.status_code == 200 for r in results)
