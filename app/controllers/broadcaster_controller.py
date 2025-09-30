@@ -14,12 +14,16 @@ broadcaster_service = BroadcasterService()
 async def broadcaster_meeting(
     payload: BroadcasterRobot = Body(..., description="Broadcaster robot payload"),
 ):
-    """Start broadcasting a BBB meeting to RTMP (e.g., Twitch)."""
+    """
+    Start broadcasting a BBB meeting.
+    platform maps to stream.title (e.g., youtube, twitch, etc.)
+    """
     return await broadcaster_service.start_broadcasting(
         meeting_id=payload.meeting_id,
         rtmp_url=payload.rtmp_url,
         stream_key=payload.stream_key,
         password=payload.password,
+        platform=payload.platform,
         bbb_service=bbb_service,
     )
 

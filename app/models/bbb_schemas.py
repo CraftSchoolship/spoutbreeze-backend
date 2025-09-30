@@ -4,11 +4,15 @@ from typing import Optional, List, Dict, Any
 
 class BroadcasterRequest(BaseModel):
     """
-    Broadcaster Model for joining a BBB meeting
+    Broadcaster request sent to external broadcaster service
     """
-
     bbb_health_check_url: str
     bbb_server_url: str
+    stream: "StreamConfig"
+
+
+class StreamConfig(BaseModel):
+    platform: str
     rtmp_url: str
     stream_key: str
 
@@ -18,6 +22,7 @@ class BroadcasterRobot(BaseModel):
     rtmp_url: str
     stream_key: str
     password: str
+    platform: str
 
 
 class BroadcasterResponse(BaseModel):
