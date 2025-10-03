@@ -4,6 +4,7 @@ from keycloak import KeycloakOpenID, KeycloakAdmin
 import os
 import urllib3
 from typing import Union
+from pydantic import Field
 
 
 class Settings(BaseSettings):
@@ -21,7 +22,8 @@ class Settings(BaseSettings):
     plugin_manifests_url: str
 
     # Broadcaster service settings
-    broadcaster_api_url: str
+    broadcaster_api_url: str = Field(..., alias="BROADCASTER_API_URL")
+    broadcaster_api_timeout: int = Field(15, alias="BROADCASTER_API_TIMEOUT")
 
     # Twitch IRC settings
     twitch_server: str

@@ -1,22 +1,18 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 
-
+# Payload sent to external broadcaster
 class BroadcasterRequest(BaseModel):
-    """
-    Broadcaster request sent to external broadcaster service
-    """
     bbb_health_check_url: str
     bbb_server_url: str
     stream: "StreamConfig"
-
 
 class StreamConfig(BaseModel):
     platform: str
     rtmp_url: str
     stream_key: str
 
-
+# Request body accepted by our API to start a broadcast
 class BroadcasterRobot(BaseModel):
     meeting_id: str
     rtmp_url: str
@@ -24,25 +20,10 @@ class BroadcasterRobot(BaseModel):
     password: str
     platform: str
 
-
-class BroadcasterResponse(BaseModel):
-    """
-    Response model from the broadcaster service
-    """
-
-    status: str
-    message: str
-    details: Optional[Dict[str, Any]] = None
-
-
 class PluginManifests(BaseModel):
-    """
-    Model for the plugin
-    """
-
     url: str
 
-
+# BBB related request/response models (trimmed to what is currently used)
 class CreateMeetingRequest(BaseModel):
     name: str
     meeting_id: Optional[str] = None
@@ -152,12 +133,7 @@ class IsMeetingRunningRequest(BaseModel):
 class GetRecordingRequest(BaseModel):
     meeting_id: str
 
-
 class MeetingAttendee(BaseModel):
-    """
-    Model for an attendee in a BBB meeting
-    """
-
     userID: Optional[str] = None
     fullName: Optional[str] = None
     role: Optional[str] = None
@@ -167,12 +143,7 @@ class MeetingAttendee(BaseModel):
     hasVideo: Optional[bool] = None
     clientType: Optional[str] = None
 
-
 class Meeting(BaseModel):
-    """
-    Model for a BBB meeting
-    """
-
     meetingID: str
     meetingName: str
     createTime: Optional[str] = None
@@ -195,3 +166,32 @@ class Meeting(BaseModel):
     maxUsers: Optional[int] = None
     moderatorCount: Optional[int] = None
     attendees: Optional[List[MeetingAttendee]] = None
+
+class BroadcasterStreamInfo(BaseModel):
+    stream_id: str
+    pod_name: Optional[str] = None
+    status: str
+    created_at: Optional[str] = None
+
+class StartBroadcastResponse(BaseModel):
+    status: str
+    message: str
+    join_url: str
+    stream: BroadcasterStreamInfo
+    meeting_info: Dict[str, Any]
+
+class BroadcastStatusStream(BaseModel):
+    platform: str
+    rtmp_url: str
+    stream_key: str
+
+class BroadcastStatusResponse(BaseModel):
+    stream_id: str
+    status: str
+    pod_name: Optional[str] = None
+    bbb_health_check_url: Optional[str] = None
+    bbb_server_url: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    streams: Optional[List[BroadcastStatusStream]] = None
+    error: Optional[str] = None
