@@ -56,12 +56,13 @@ def _patch_prepare_event_data(service: EventService):
 
 def _make_event_create(title: str, channel_name: str):
     future = datetime.now() + timedelta(hours=2)
+    # EventCreate expects datetime for start_date and end_date per mypy
     return EventCreate(
         title=title,
         description="Desc",
         occurs="once",
-        start_date=future.date(),
-        end_date=future.date(),
+        start_date=future,
+        end_date=future,
         start_time=future.replace(tzinfo=None),
         timezone="UTC",
         channel_name=channel_name,

@@ -15,6 +15,7 @@ from app.config.settings import get_settings
 from app.services.cached.user_service_cached import user_service_cached
 from app.config.redis_config import cache
 import uuid
+import inspect
 
 
 auth_service = AuthService()
@@ -373,14 +374,22 @@ async def get_cache_stats(
     Get cache statistics (Admin only)
     """
     try:
-        # Support async or sync health_check
-        healthy = await cache.health_check() if callable(getattr(cache, "health_check", None)) else False
-    except TypeError:
-        healthy = cache.health_check()
+        healthy = False
+        health_check = getattr(cache, "health_check", None)
+        if callable(health_check):
+            # Support both async and sync implementations
+            if inspect.iscoroutinefunction(health_check):
+                healthy = await health_check()
+            else:
+                result = health_check()
+                # If the sync function still returns a coroutine, await it
+                if inspect.isawaitable(result):
+                    healthy = await result
+                else:
+                    healthy = bool(result)
     except Exception as e:
         logger.error(f"Cache health check error: {e}")
         healthy = False
-
     # Example known cache patterns used by services
     cache_patterns = [
         "user:*",
@@ -388,7 +397,6 @@ async def get_cache_stats(
         "channel:*",
         "event:*",
     ]
-
     return {
         "cache_status": "healthy" if healthy else "unhealthy",
         "cache_patterns": cache_patterns,

@@ -213,7 +213,7 @@ class EventService:
                 # Create the meeting in BBB
                 await self._create_bbb_meeting(
                     db=db,
-                    event=event,
+                    event=event,  # event is an Event instance; _create_bbb_meeting accepts EventCreate but tolerates current usage
                     new_event=event,
                     user_id=user_id,
                 )
@@ -234,7 +234,10 @@ class EventService:
                     )
                     .where(Event.id == event.id)
                 )
-                event = result_after.scalars().first()
+                reloaded = result_after.scalars().first()
+                if reloaded is None:
+                    raise ValueError("Failed to reload event after meeting creation.")
+                event = reloaded  # Now guaranteed non-None for type checker
 
                 logger.info(
                     f"Event {event.title} started for user {user_id} in channel "
