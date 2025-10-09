@@ -180,3 +180,9 @@ def mock_current_user(test_user: User):
         return test_user
 
     return _mock_current_user
+
+
+@pytest.fixture
+def anyio_backend():
+    # Force AnyIO to use asyncio so Trio is not required
+    return "asyncio"

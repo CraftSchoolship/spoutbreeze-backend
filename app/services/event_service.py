@@ -213,7 +213,7 @@ class EventService:
                 # Create the meeting in BBB
                 await self._create_bbb_meeting(
                     db=db,
-                    event=event,
+                    event=event,  # event is an Event instance; _create_bbb_meeting accepts EventCreate but tolerates current usage
                     new_event=event,
                     user_id=user_id,
                 )
@@ -224,9 +224,24 @@ class EventService:
                 event.actual_start_time = datetime.now()
 
                 await db.commit()
-                await db.refresh(event)
+                # Re-load with relationships to avoid async lazy-load (MissingGreenlet) on event.channel
+                result_after = await db.execute(
+                    select(Event)
+                    .options(
+                        selectinload(Event.organizers),
+                        selectinload(Event.channel),
+                        selectinload(Event.creator),
+                    )
+                    .where(Event.id == event.id)
+                )
+                reloaded = result_after.scalars().first()
+                if reloaded is None:
+                    raise ValueError("Failed to reload event after meeting creation.")
+                event = reloaded  # Now guaranteed non-None for type checker
+
                 logger.info(
-                    f"Event {event.title} started for user {user_id} in channel {event.channel.name}"
+                    f"Event {event.title} started for user {user_id} in channel "
+                    f"{event.channel.name if getattr(event, 'channel', None) else 'unknown'}"
                 )
 
             if not event.meeting_id or not event.moderator_pw:

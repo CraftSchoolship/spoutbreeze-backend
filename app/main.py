@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -71,11 +72,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connected")
 
     # Startup: schedule the IRC client
-    # twitch_tasks = asyncio.gather(
-    #     twitch_client.connect(),
-    #     twitch_client.start_token_refresh_scheduler(),
-    #     return_exceptions=True,
-    # )
+    twitch_tasks = asyncio.gather(
+        twitch_client.connect(),
+        # twitch_client.start_token_refresh_scheduler(),
+        return_exceptions=True,
+    )
 
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
@@ -101,11 +102,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connection closed")
 
     # Shutdown: cancel the IRC task
-    # twitch_tasks.cancel()
-    # try:
-    #     await twitch_tasks
-    # except asyncio.CancelledError:
-    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
+    twitch_tasks.cancel()
+    try:
+        await twitch_tasks
+    except asyncio.CancelledError:
+        logger.info("[TwitchIRC] Connect task cancelled cleanly")
 
     logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
@@ -166,7 +167,7 @@ origins = [
     "http://spoutbreeze-frontend.spoutbreeze.svc.cluster.local:3000",  # Frontend URL in Kubernetes
     "https://frontend.67.222.155.30.nip.io:30443",  # Frontend URL
     "https://frontend.67.222.155.30.nip.io",  # Frontend URL without port
-    "https://bbb3.riadvice.ovh",  # BBB URL
+    "https://test.b3.craftschoolship.com",  # BBB URL
     "https://67.222.155.30:8443",  # Keycloak URL
     "https://backend.67.222.155.30.nip.io:30444",  # Backend URL
     "https://backend.67.222.155.30.nip.io",  # Backend URL without port

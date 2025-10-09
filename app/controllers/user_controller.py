@@ -15,6 +15,7 @@ from app.config.settings import get_settings
 from app.services.cached.user_service_cached import user_service_cached
 from app.config.redis_config import cache
 import uuid
+import inspect
 
 
 auth_service = AuthService()
@@ -89,7 +90,7 @@ def require_role(required_role: str):
         if not current_user.has_role(required_role):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Role '{required_role}' required to access this resource",
+                detail=f"{required_role.capitalize()} role is required to access this resource",
             )
         return True
 
@@ -105,7 +106,7 @@ def require_any_role(*required_roles: str):
         if not current_user.has_any_role(*required_roles):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"One of these roles required: {', '.join(required_roles)}",
+                detail=f"One of roles {required_roles} is required to access this resource",
             )
         return True
 
@@ -199,15 +200,14 @@ async def get_users(
     Get a list of users (Admin only) with caching
     """
     logger.info(f"Admin user {current_user.username} is requesting users list")
-
     try:
         users = await user_service_cached.get_users_list_cached(skip, limit, db)
         return users
     except Exception as e:
-        logger.error(f"Error fetching users list: {str(e)}")
+        logger.error(f"Error fetching users list: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch users list",
+            detail="Failed to retrieve users",
         )
 
 
@@ -374,22 +374,30 @@ async def get_cache_stats(
     Get cache statistics (Admin only)
     """
     try:
-        # This is a simple implementation - Redis has more detailed stats available
-        cache_healthy = await cache.health_check()
-
-        return {
-            "cache_status": "healthy" if cache_healthy else "unhealthy",
-            "redis_connected": cache.redis_client is not None,
-            "cache_patterns": [
-                "user_profile:*",
-                "user_keycloak:*",
-                "user_roles:*",
-                "users_list:*",
-            ],
-        }
+        healthy = False
+        health_check = getattr(cache, "health_check", None)
+        if callable(health_check):
+            # Support both async and sync implementations
+            if inspect.iscoroutinefunction(health_check):
+                healthy = await health_check()
+            else:
+                result = health_check()
+                # If the sync function still returns a coroutine, await it
+                if inspect.isawaitable(result):
+                    healthy = await result
+                else:
+                    healthy = bool(result)
     except Exception as e:
-        logger.error(f"Failed to get cache stats: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to get cache statistics",
-        )
+        logger.error(f"Cache health check error: {e}")
+        healthy = False
+    # Example known cache patterns used by services
+    cache_patterns = [
+        "user:*",
+        "users:list*",
+        "channel:*",
+        "event:*",
+    ]
+    return {
+        "cache_status": "healthy" if healthy else "unhealthy",
+        "cache_patterns": cache_patterns,
+    }
