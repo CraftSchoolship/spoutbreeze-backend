@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     # Startup: schedule the IRC client
     twitch_tasks = asyncio.gather(
         twitch_client.connect(),
-        twitch_client.start_token_refresh_scheduler(),
+        # twitch_client.start_token_refresh_scheduler(),
         return_exceptions=True,
     )
 
