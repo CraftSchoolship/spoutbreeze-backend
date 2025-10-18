@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi import APIRouter, Query, HTTPException, Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.config.database.session import get_db
@@ -7,9 +7,16 @@ from app.models.twitch.twitch_models import TwitchToken
 from app.models.user_models import User
 from app.controllers.user_controller import get_current_user
 from app.services.twitch_service import twitch_service
+from app.services.chat_gateway_client import chat_gateway_client
 from datetime import datetime, timedelta
+import logging
+from pydantic import BaseModel
+import os
 
 router = APIRouter(prefix="/auth", tags=["Twitch Authentication"])
+logger = logging.getLogger(__name__)
+
+SHARED_SECRET = os.getenv("CHAT_GATEWAY_SHARED_SECRET", "dev-secret")
 
 
 @router.get("/twitch/callback")
@@ -149,9 +156,10 @@ async def revoke_twitch_token(
 
 @router.post("/twitch/connect")
 async def connect_to_twitch(
-    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
 ):
-    """Start user-specific Twitch IRC connection"""
+    """Start Twitch IRC connection for this user"""
     try:
         # Check if user has token
         stmt = select(TwitchToken).where(
@@ -165,15 +173,68 @@ async def connect_to_twitch(
         if not token:
             raise HTTPException(status_code=400, detail="No active Twitch token found")
 
-        # Start connection for this user
-        success = await twitch_service.start_connection_for_user(str(current_user.id))
+        # Start IRC connection
+        await twitch_service.start_connection_for_user(str(current_user.id))
+        # Do not await a long-running loop; optionally wait a moment
+        # import asyncio
+        # await asyncio.sleep(0.5)
+
+        await chat_gateway_client.register_platform("twitch", str(current_user.id))
 
         return {
-            "message": "Twitch IRC connection started"
-            if success
-            else "Failed to start connection",
+            "message": "Twitch connection started",
             "user_id": str(current_user.id),
-            "connected": success,
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SendMessageRequest(BaseModel):
+    user_id: str
+    message: str
+
+
+@router.post("/twitch/send-message")
+async def send_twitch_message(
+    request: SendMessageRequest,
+    x_internal_auth: str = Header(None, alias="X-Internal-Auth"),
+):
+    """Send a message to Twitch IRC (internal endpoint for gateway)"""
+    # Verify internal auth
+    if not x_internal_auth or x_internal_auth != SHARED_SECRET:
+        logger.error(f"[Twitch] Auth failed. Received: {x_internal_auth}, Expected: {SHARED_SECRET}")
+        raise HTTPException(status_code=401, detail="Unauthorized - internal endpoint")
+
+    try:
+        from app.services.twitch_service import twitch_service
+        import asyncio  # ADD
+
+        client = twitch_service.get_connection_for_user(request.user_id)
+        if not client or not getattr(client, "is_connected", False):
+            logger.info(f"[Twitch] No active connection for {request.user_id}, starting...")
+            await twitch_service.start_connection_for_user(request.user_id)
+            # brief wait for connection to establish
+            await asyncio.sleep(1.0)
+            client = twitch_service.get_connection_for_user(request.user_id)
+
+        if not client or not getattr(client, "is_connected", False):
+            raise HTTPException(
+                status_code=404, detail=f"No active Twitch connection for user {request.user_id}"
+            )
+
+        await client.send_chat_message(request.message)
+        logger.info(
+            f"Message sent to Twitch for user {request.user_id}: {request.message}"
+        )
+        return {
+            "status": "success",
+            "message": "Message sent to Twitch",
+            "content": request.message,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending Twitch message: {e}")
         raise HTTPException(status_code=500, detail=str(e))
