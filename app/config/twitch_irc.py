@@ -5,12 +5,14 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from fastapi import HTTPException
 from typing import Optional, Dict, Any
+import contextlib  # ADD
 
 from app.config.chat_manager import chat_manager
 from app.config.settings import get_settings
 from app.config.logger_config import get_logger
 from app.config.database.session import get_db
 from app.models.twitch.twitch_models import TwitchToken
+from app.services.chat_gateway_client import chat_gateway_client
 
 logger = get_logger("Twitch")
 
@@ -28,6 +30,7 @@ class TwitchIRCClient:
         self.writer = None
         self.token = None
         self.user_id = user_id  # Store user_id for user-specific connections
+        self.is_connected: bool = False  # ADD
 
     def _get_public_ssl_context(self):
         """Create SSL context for public APIs (like Twitch) with system certificates"""
@@ -281,56 +284,70 @@ class TwitchIRCClient:
                     await asyncio.sleep(30)
                     continue
 
-                # Create SSL context with proper certificate handling
                 ssl_context = self._get_public_ssl_context()
 
-                # Open a secure TLS connection with custom SSL context
                 self.reader, self.writer = await asyncio.open_connection(
                     self.server, self.port, ssl=ssl_context
                 )
 
-                # Send PASS, NICK, JOIN
                 self.writer.write(f"PASS oauth:{self.token}\r\n".encode())
                 self.writer.write(f"NICK {self.nickname}\r\n".encode())
                 self.writer.write(f"JOIN {self.channel}\r\n".encode())
                 await self.writer.drain()
 
+                self.is_connected = True  # ADD
                 logger.info("[TwitchIRC] Connected, listening for messages…")
                 await self.listen()
             except Exception as e:
+                self.is_connected = False  # ADD
                 logger.info(f"[TwitchIRC] Connection error: {e!r}")
-                # Back off before retrying
                 await asyncio.sleep(5)
 
     async def listen(self):
         while True:
             line = await self.reader.readline()
             if not line:
-                # socket closed
+                self.is_connected = False  # ADD
                 raise ConnectionResetError("Stream closed")
             msg = line.decode(errors="ignore").strip()
 
             if msg.startswith("PING"):
-                # respond to PING to keep the connection alive
                 self.writer.write("PONG :tmi.twitch.tv\r\n".encode())
                 await self.writer.drain()
                 continue
 
-            if "PRIVMSG" in msg:
-                # raw IRC line
-                logger.info(f"[TwitchIRC] ← {msg}")
+            await self._handle_message(msg)
 
-                # (optional) parse out username and text
-                # prefix is like: ":username!username@username.tmi.twitch.tv PRIVMSG #channel :message text"
-                try:
-                    payload = msg.split("PRIVMSG", 1)[1]
-                    user = msg.split("!", 1)[0].lstrip(":")
-                    text = payload.split(":", 1)[1]
-                    logger.info(f"[TwitchIRC] {user}: {text}")
-                except Exception:
-                    pass
+    async def _handle_message(self, message: str) -> None:
+        """Parse and handle incoming IRC messages"""
+        if message.startswith("PING"):
+            self.writer.write(b"PONG :tmi.twitch.tv\r\n")
+            await self.writer.drain()
+            return
 
-                await chat_manager.broadcast(msg)
+        if "PRIVMSG" in message:
+            try:
+                # Parse message
+                parts = message.split(":", 2)
+                if len(parts) >= 3:
+                    username = parts[1].split("!")[0]
+                    msg_content = parts[2].strip()
+
+                    logger.info(f"[TwitchIRC] {username}: {msg_content}")
+
+                    # Forward to Chat Gateway (simplified call)
+                    try:
+                        await chat_gateway_client.forward_message(
+                            platform="twitch",
+                            user_id=self.user_id or username,
+                            username=username,
+                            message=msg_content
+                        )
+                    except Exception as e:
+                        logger.error(f"[TwitchIRC] Failed to forward to gateway: {e}")
+
+            except Exception as e:
+                logger.error(f"[TwitchIRC] Error parsing message: {e}")
 
     async def send_message(self, message: str):
         if self.writer:
@@ -340,6 +357,32 @@ class TwitchIRCClient:
             logger.info(f"[TwitchIRC] Sent: {message}")
         else:
             logger.info("[TwitchIRC] Writer not initialized, cannot send message.")
+
+    async def send_chat_message(self, message: str) -> None:
+        """Send a message to the Twitch chat"""
+        if not self.writer:
+            raise Exception("Not connected to Twitch IRC")
+        full = f"PRIVMSG {self.channel} :{message}\r\n"
+        self.writer.write(full.encode())
+        await self.writer.drain()
+        logger.info(f"[TwitchIRC] → Sent message: {message}")
+
+    async def disconnect(self):
+        """Gracefully close the IRC connection"""
+        try:
+            if self.writer:
+                try:
+                    self.writer.write("PART {0}\r\n".format(self.channel).encode())
+                    await self.writer.drain()
+                except Exception:
+                    pass
+                self.writer.close()
+                with contextlib.suppress(Exception):
+                    await self.writer.wait_closed()
+        finally:
+            self.reader = None
+            self.writer = None
+            self.is_connected = False
 
     async def start_token_refresh_scheduler(self):
         """Start a background task to periodically check and refresh tokens"""
