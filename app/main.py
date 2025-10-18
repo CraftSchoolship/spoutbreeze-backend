@@ -171,6 +171,7 @@ origins = [
     "https://67.222.155.30:8443",  # Keycloak URL
     "https://backend.67.222.155.30.nip.io:30444",  # Backend URL
     "https://backend.67.222.155.30.nip.io",  # Backend URL without port
+    "http://localhost:8800",  # Chat Gateway self
 ]
 
 # Configure CORS
@@ -235,7 +236,7 @@ async def test_endpoint():
 # Include routers
 app.include_router(health_router)
 app.include_router(auth_router)
-app.include_router(twitch_router)
+app.include_router(twitch_router, prefix="/api")
 app.include_router(user_router)
 app.include_router(channels_router)
 app.include_router(event_router)
