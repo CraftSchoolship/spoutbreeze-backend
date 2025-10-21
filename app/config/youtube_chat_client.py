@@ -3,7 +3,7 @@ import httpx
 from httpx import HTTPStatusError
 from datetime import datetime, timedelta
 from sqlalchemy import select
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from app.config.settings import get_settings
 from app.config.logger_config import get_logger
 from app.config.database.session import get_db
@@ -85,15 +85,14 @@ class YouTubeChatClient:
         # Attempt 1: liveBroadcasts.list (active, mine=true)
         try:
             url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
-            params = {
+            params: QueryParamsType = cast(QueryParamsType, {
                 "part": "id,snippet,status",
-                "broadcastStatus": "active",  # valid values: active|completed|upcoming
+                "broadcastStatus": "active",
                 "mine": "true",
                 "maxResults": 5,
-            }
+            })
             async with httpx.AsyncClient() as client:
-                params_typed: QueryParamsType = params
-                r = await client.get(url, params=params_typed, headers=headers)
+                r = await client.get(url, params=params, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 if data.get("items"):
@@ -124,13 +123,13 @@ class YouTubeChatClient:
                 return None
 
             search_url = "https://www.googleapis.com/youtube/v3/search"
-            search_params = {
+            search_params: QueryParamsType = cast(QueryParamsType, {
                 "part": "id",
                 "channelId": self.authorized_channel_id,
                 "eventType": "live",
                 "type": "video",
                 "maxResults": 1,
-            }
+            })
             async with httpx.AsyncClient() as client:
                 sr = await client.get(search_url, params=search_params, headers=headers)
                 sr.raise_for_status()
@@ -138,7 +137,7 @@ class YouTubeChatClient:
                 if sdata.get("items"):
                     video_id = sdata["items"][0]["id"]["videoId"]
                     videos_url = "https://www.googleapis.com/youtube/v3/videos"
-                    videos_params = {"part": "liveStreamingDetails", "id": video_id}
+                    videos_params: QueryParamsType = cast(QueryParamsType, {"part": "liveStreamingDetails", "id": video_id})
                     vr = await client.get(
                         videos_url, params=videos_params, headers=headers
                     )
@@ -167,18 +166,17 @@ class YouTubeChatClient:
         if not self.live_chat_id:
             return []
         url = "https://www.googleapis.com/youtube/v3/liveChat/messages"
-        params = {
+        params: QueryParamsType = cast(QueryParamsType, {
             "liveChatId": self.live_chat_id,
             "part": "snippet,authorDetails",
             "maxResults": 200,
-        }
+        })
         if self.next_page_token:
-            params["pageToken"] = self.next_page_token
+            params = cast(QueryParamsType, {**params, "pageToken": self.next_page_token})
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             async with httpx.AsyncClient() as client:
-                params_typed: QueryParamsType = params
-                r = await client.get(url, params=params_typed, headers=headers)
+                r = await client.get(url, params=params, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 self.next_page_token = data.get("nextPageToken")

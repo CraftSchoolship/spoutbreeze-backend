@@ -348,6 +348,7 @@ class TwitchIRCClient:
                             user_id=self.user_id or username,
                             username=username,
                             message=msg_content,
+                            message_id=None,  # ADD
                         )
                     except Exception as e:
                         logger.error(f"[TwitchIRC] Failed to forward to gateway: {e}")
