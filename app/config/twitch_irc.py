@@ -30,7 +30,7 @@ class TwitchIRCClient:
         self.writer = None
         self.token = None
         self.user_id = user_id  # Store user_id for user-specific connections
-        self.is_connected: bool = False  # ADD
+        self.is_connected: bool = False
 
     def _get_public_ssl_context(self):
         """Create SSL context for public APIs (like Twitch) with system certificates"""
