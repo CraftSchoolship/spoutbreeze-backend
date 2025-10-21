@@ -19,6 +19,7 @@ from app.controllers.channels_controller import router as channels_router
 from app.controllers.event_controller import router as event_router
 from app.controllers.health_controller import router as health_router
 from app.controllers.twitch_controller import router as twitch_router
+from app.controllers.youtube_controller import router as youtube_router
 
 from app.config.chat_manager import chat_manager
 from app.config.twitch_irc import TwitchIRCClient
@@ -237,6 +238,7 @@ async def test_endpoint():
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(twitch_router, prefix="/api")
+app.include_router(youtube_router, prefix="/api")
 app.include_router(user_router)
 app.include_router(channels_router)
 app.include_router(event_router)
