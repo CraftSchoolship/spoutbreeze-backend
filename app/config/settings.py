@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     twitch_client_secret: str
     twitch_token_url: str
 
+    # YouTube OAuth settings
+    youtube_client_id: str
+    youtube_client_secret: str
+    youtube_redirect_uri: str
+
     # Database settings
     db_url: str
 
