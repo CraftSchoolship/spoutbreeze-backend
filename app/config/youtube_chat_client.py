@@ -239,16 +239,22 @@ class YouTubeChatClient:
                     text = (snippet.get("textMessageDetails") or {}).get("messageText") or ""
                     if not text:
                         continue
+                    # Keep: ignore messages authored by our authenticated channel
+                    author_channel_id = author.get("channelId")
+                    if author_channel_id and self.authorized_channel_id and author_channel_id == self.authorized_channel_id:
+                        continue
+
                     username = author.get("displayName", "Unknown")
-                    message_id = msg.get("id")
                     await chat_gateway_client.forward_message(
                         platform="youtube",
-                        user_id=author.get("channelId"),
+                        user_id=author_channel_id,
                         username=username,
                         message=text,
-                        message_id=message_id,
+                        message_id=msg.get("id"),
                     )
                     logger.info(f"[YouTube] {username}: {text}")
+
+                # removed: self._prune_sent_ids()
                 await asyncio.sleep(self.polling_interval)
             except Exception as e:
                 logger.error(f"[YouTube] poll error: {e}")
