@@ -9,6 +9,12 @@ from app.config.logger_config import get_logger
 from app.config.database.session import get_db
 from app.models.youtube_models import YouTubeToken
 from app.services.chat_gateway_client import chat_gateway_client
+from typing import Mapping, Union, Sequence
+
+QueryParamsType = Mapping[
+    str,
+    Union[str, int, float, bool, None, Sequence[Union[str, int, float, bool, None]]],
+]
 
 logger = get_logger("YouTube")
 settings = get_settings()
@@ -58,7 +64,8 @@ class YouTubeChatClient:
             url = "https://www.googleapis.com/youtube/v3/channels"
             params = {"part": "id,snippet", "mine": "true"}
             async with httpx.AsyncClient() as client:
-                r = await client.get(url, params=params, headers=headers)
+                params_typed: QueryParamsType = params
+                r = await client.get(url, params=params_typed, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 if data.get("items"):
@@ -85,7 +92,8 @@ class YouTubeChatClient:
                 "maxResults": 5,
             }
             async with httpx.AsyncClient() as client:
-                r = await client.get(url, params=params, headers=headers)
+                params_typed: QueryParamsType = params
+                r = await client.get(url, params=params_typed, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 if data.get("items"):
@@ -169,7 +177,8 @@ class YouTubeChatClient:
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             async with httpx.AsyncClient() as client:
-                r = await client.get(url, params=params, headers=headers)
+                params_typed: QueryParamsType = params
+                r = await client.get(url, params=params_typed, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 self.next_page_token = data.get("nextPageToken")

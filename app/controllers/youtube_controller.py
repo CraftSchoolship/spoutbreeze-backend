@@ -227,13 +227,18 @@ async def youtube_attach_by_video(
 ):
     # use user's token via client
     client = youtube_service.get_connection_for_user(str(current_user.id))
-    if not client:
+    if client is None:
         await youtube_service.start_connection_for_user(str(current_user.id))
-        # give service a client
         client = youtube_service.get_connection_for_user(str(current_user.id))
 
+    # If still None, fail early to satisfy type checker and runtime safety
+    if client is None:
+        raise HTTPException(
+            status_code=500, detail="Failed to initialize YouTube client"
+        )
+
     # ensure token
-    if not client.token:
+    if client.token is None:
         client.token = await client.get_active_token()
 
     headers = {"Authorization": f"Bearer {client.token}"}

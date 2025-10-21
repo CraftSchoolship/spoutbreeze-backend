@@ -312,8 +312,11 @@ class TwitchIRCClient:
             msg = line.decode(errors="ignore").strip()
 
             if msg.startswith("PING"):
-                self.writer.write("PONG :tmi.twitch.tv\r\n".encode())
-                await self.writer.drain()
+                if self.writer is not None:
+                    self.writer.write(b"PONG :tmi.twitch.tv\r\n")
+                    await self.writer.drain()
+                else:
+                    logger.warning("[TwitchIRC] Writer is None during PING response.")
                 continue
 
             await self._handle_message(msg)
@@ -321,8 +324,11 @@ class TwitchIRCClient:
     async def _handle_message(self, message: str) -> None:
         """Parse and handle incoming IRC messages"""
         if message.startswith("PING"):
-            self.writer.write(b"PONG :tmi.twitch.tv\r\n")
-            await self.writer.drain()
+            if self.writer is not None:
+                self.writer.write(b"PONG :tmi.twitch.tv\r\n")
+                await self.writer.drain()
+            else:
+                logger.warning("[TwitchIRC] Writer is None during PING response.")
             return
 
         if "PRIVMSG" in message:
