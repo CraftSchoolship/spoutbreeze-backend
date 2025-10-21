@@ -39,7 +39,9 @@ async def test_users_forbidden_for_non_admin(client, monkeypatch):
             assert False, "Service should not be called for forbidden user"
 
         monkeypatch.setattr(
-            user_controller.user_service_cached, "get_users_list_cached", should_not_be_called
+            user_controller.user_service_cached,
+            "get_users_list_cached",
+            should_not_be_called,
         )
 
         resp = await client.get("/api/users")
@@ -101,6 +103,7 @@ async def test_cache_stats_allowed_for_admin(client, monkeypatch):
         "admin", roles=["admin"]
     )
     try:
+
         async def ok_health():
             return True
 
@@ -113,6 +116,8 @@ async def test_cache_stats_allowed_for_admin(client, monkeypatch):
         assert data["cache_status"] in ("healthy", "unhealthy")
         # If we mocked healthy:
         assert data["cache_status"] == "healthy"
-        assert isinstance(data["cache_patterns"], list) and len(data["cache_patterns"]) > 0
+        assert (
+            isinstance(data["cache_patterns"], list) and len(data["cache_patterns"]) > 0
+        )
     finally:
         app.dependency_overrides.pop(user_controller.get_current_user, None)

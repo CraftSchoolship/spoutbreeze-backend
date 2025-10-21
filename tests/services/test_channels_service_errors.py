@@ -19,7 +19,11 @@ async def test_create_channel_integrity_error(db_session, test_user: User, monke
     # Now simulate that a second create with same name hits DB integrity error
     # Instead of actually violating constraint (SQLite unique timing), we patch commit.
     async def failing_commit():
-        raise IntegrityError("UNIQUE constraint failed: channels.name", params=None, orig=Exception("unique"))
+        raise IntegrityError(
+            "UNIQUE constraint failed: channels.name",
+            params=None,
+            orig=Exception("unique"),
+        )
 
     rolled_back = {"yes": False}
 
@@ -36,7 +40,9 @@ async def test_create_channel_integrity_error(db_session, test_user: User, monke
 
 
 @pytest.mark.anyio
-async def test_update_channel_db_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
+async def test_update_channel_db_failure_triggers_rollback(
+    db_session, test_user: User, monkeypatch
+):
     svc = ChannelsService()
     # Seed channel
     ch = await svc.create_channel(
@@ -64,7 +70,9 @@ async def test_update_channel_db_failure_triggers_rollback(db_session, test_user
 
 
 @pytest.mark.anyio
-async def test_delete_channel_db_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
+async def test_delete_channel_db_failure_triggers_rollback(
+    db_session, test_user: User, monkeypatch
+):
     svc = ChannelsService()
     ch = await svc.create_channel(
         db_session,
@@ -90,7 +98,9 @@ async def test_delete_channel_db_failure_triggers_rollback(db_session, test_user
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_name_exception_path(db_session, test_user: User, monkeypatch):
+async def test_get_channel_by_name_exception_path(
+    db_session, test_user: User, monkeypatch
+):
     svc = ChannelsService()
 
     # Patch execute to raise unexpected exception

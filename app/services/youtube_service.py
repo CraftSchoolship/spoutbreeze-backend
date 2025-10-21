@@ -2,6 +2,7 @@ from typing import Dict, Optional
 import asyncio
 from app.config.youtube_chat_client import YouTubeChatClient
 
+
 class YouTubeService:
     def __init__(self) -> None:
         self._connections: Dict[str, YouTubeChatClient] = {}
@@ -28,5 +29,6 @@ class YouTubeService:
         if client:
             await client.disconnect()
             self._connections.pop(user_id, None)
+
 
 youtube_service = YouTubeService()

@@ -81,13 +81,14 @@ async def youtube_callback(
             "user_id": str(current_user.id),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to exchange code: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to exchange code: {str(e)}"
+        )
 
 
 @router.post("/youtube/connect")
 async def connect_to_youtube(
-    current_user: User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Start YouTube chat polling for this user"""
     try:
@@ -134,25 +135,41 @@ async def send_youtube_message(
     try:
         client = youtube_service.get_connection_for_user(request.user_id)
 
-        if not client or not client.is_connected or not getattr(client, "live_chat_id", None):
-            logger.info(f"[YouTube] No active connection for {request.user_id}, starting...")
+        if (
+            not client
+            or not client.is_connected
+            or not getattr(client, "live_chat_id", None)
+        ):
+            logger.info(
+                f"[YouTube] No active connection for {request.user_id}, starting..."
+            )
             await youtube_service.start_connection_for_user(request.user_id)
 
             # Wait up to 5s for connect + liveChatId discovery
             for _ in range(10):
                 client = youtube_service.get_connection_for_user(request.user_id)
-                if client and client.is_connected and getattr(client, "live_chat_id", None):
+                if (
+                    client
+                    and client.is_connected
+                    and getattr(client, "live_chat_id", None)
+                ):
                     break
                 await asyncio.sleep(0.5)
 
-        if not client or not client.is_connected or not getattr(client, "live_chat_id", None):
+        if (
+            not client
+            or not client.is_connected
+            or not getattr(client, "live_chat_id", None)
+        ):
             raise HTTPException(
                 status_code=404,
-                detail=f"No active YouTube live chat for user {request.user_id}"
+                detail=f"No active YouTube live chat for user {request.user_id}",
             )
 
         await client.send_message(request.message)
-        logger.info(f"[YouTube] → Sent message for user {request.user_id}: {request.message}")
+        logger.info(
+            f"[YouTube] → Sent message for user {request.user_id}: {request.message}"
+        )
         return {
             "status": "success",
             "message": "Message sent to YouTube",
@@ -174,18 +191,23 @@ async def youtube_status(current_user: User = Depends(get_current_user)):
         "live_chat_id": getattr(client, "live_chat_id", None),
         "polling_interval": getattr(client, "polling_interval", None),
         "authorized_channel_id": getattr(client, "authorized_channel_id", None),  # ADD
-        "authorized_channel_title": getattr(client, "authorized_channel_title", None),  # ADD
+        "authorized_channel_title": getattr(
+            client, "authorized_channel_title", None
+        ),  # ADD
         "last_error": getattr(client, "last_error", None),  # ADD
     }
 
 
 from pydantic import BaseModel
 
+
 class AttachChatIdRequest(BaseModel):
     live_chat_id: str
 
+
 class AttachByVideoIdRequest(BaseModel):
     video_id: str
+
 
 # Force attach by live_chat_id (debug/unblock)
 @router.post("/youtube/attach-chat")
@@ -195,6 +217,7 @@ async def youtube_attach_chat(
 ):
     await youtube_service.start_with_chat_id(str(current_user.id), payload.live_chat_id)
     return {"status": "attached", "live_chat_id": payload.live_chat_id}
+
 
 # Resolve from video_id then attach
 @router.post("/youtube/attach-by-video")
@@ -226,6 +249,12 @@ async def youtube_attach_by_video(
             raise HTTPException(status_code=404, detail="Video not found")
         live_chat_id = vdata["items"][0]["liveStreamingDetails"].get("activeLiveChatId")
         if not live_chat_id:
-            raise HTTPException(status_code=404, detail="No activeLiveChatId on this video")
+            raise HTTPException(
+                status_code=404, detail="No activeLiveChatId on this video"
+            )
     await youtube_service.start_with_chat_id(str(current_user.id), live_chat_id)
-    return {"status": "attached", "video_id": payload.video_id, "live_chat_id": live_chat_id}
+    return {
+        "status": "attached",
+        "video_id": payload.video_id,
+        "live_chat_id": live_chat_id,
+    }

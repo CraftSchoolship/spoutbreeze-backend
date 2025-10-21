@@ -156,8 +156,7 @@ async def revoke_twitch_token(
 
 @router.post("/twitch/connect")
 async def connect_to_twitch(
-    current_user: User = Depends(get_current_user), 
-    db: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Start Twitch IRC connection for this user"""
     try:
@@ -204,7 +203,9 @@ async def send_twitch_message(
     """Send a message to Twitch IRC (internal endpoint for gateway)"""
     # Verify internal auth
     if not x_internal_auth or x_internal_auth != SHARED_SECRET:
-        logger.error(f"[Twitch] Auth failed. Received: {x_internal_auth}, Expected: {SHARED_SECRET}")
+        logger.error(
+            f"[Twitch] Auth failed. Received: {x_internal_auth}, Expected: {SHARED_SECRET}"
+        )
         raise HTTPException(status_code=401, detail="Unauthorized - internal endpoint")
 
     try:
@@ -213,7 +214,9 @@ async def send_twitch_message(
 
         client = twitch_service.get_connection_for_user(request.user_id)
         if not client or not getattr(client, "is_connected", False):
-            logger.info(f"[Twitch] No active connection for {request.user_id}, starting...")
+            logger.info(
+                f"[Twitch] No active connection for {request.user_id}, starting..."
+            )
             await twitch_service.start_connection_for_user(request.user_id)
             # brief wait for connection to establish
             await asyncio.sleep(1.0)
@@ -221,7 +224,8 @@ async def send_twitch_message(
 
         if not client or not getattr(client, "is_connected", False):
             raise HTTPException(
-                status_code=404, detail=f"No active Twitch connection for user {request.user_id}"
+                status_code=404,
+                detail=f"No active Twitch connection for user {request.user_id}",
             )
 
         await client.send_chat_message(request.message)

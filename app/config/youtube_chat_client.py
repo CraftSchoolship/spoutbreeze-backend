@@ -30,6 +30,7 @@ class YouTubeChatClient:
     async def get_active_token(self) -> str:
         async for db in get_db():
             import uuid
+
             user_uuid = uuid.UUID(self.user_id)
             stmt = (
                 select(YouTubeToken)
@@ -64,7 +65,9 @@ class YouTubeChatClient:
                     ch = data["items"][0]
                     self.authorized_channel_id = ch["id"]
                     self.authorized_channel_title = ch["snippet"]["title"]
-                    logger.info(f"[YouTube] Authorized channel: {self.authorized_channel_title} ({self.authorized_channel_id})")
+                    logger.info(
+                        f"[YouTube] Authorized channel: {self.authorized_channel_title} ({self.authorized_channel_id})"
+                    )
         except Exception as e:
             logger.warning(f"[YouTube] Channel identity failed: {e}")
 
@@ -89,10 +92,14 @@ class YouTubeChatClient:
                     for item in data["items"]:
                         live_chat_id = item.get("snippet", {}).get("liveChatId")
                         if live_chat_id:
-                            logger.info(f"[YouTube] liveChatId from broadcasts: {live_chat_id}")
+                            logger.info(
+                                f"[YouTube] liveChatId from broadcasts: {live_chat_id}"
+                            )
                             return live_chat_id
         except HTTPStatusError as e:
-            logger.warning(f"[YouTube] broadcasts(active) failed: {e.response.status_code} - {e.response.text}")
+            logger.warning(
+                f"[YouTube] broadcasts(active) failed: {e.response.status_code} - {e.response.text}"
+            )
         except Exception as e:
             logger.warning(f"[YouTube] broadcasts(active) lookup failed: {e}")
 
@@ -103,7 +110,9 @@ class YouTubeChatClient:
                 await self.log_channel_identity()
 
             if not self.authorized_channel_id:
-                logger.warning("[YouTube] No authorized channel id; cannot search live video")
+                logger.warning(
+                    "[YouTube] No authorized channel id; cannot search live video"
+                )
                 return None
 
             search_url = "https://www.googleapis.com/youtube/v3/search"
@@ -122,16 +131,24 @@ class YouTubeChatClient:
                     video_id = sdata["items"][0]["id"]["videoId"]
                     videos_url = "https://www.googleapis.com/youtube/v3/videos"
                     videos_params = {"part": "liveStreamingDetails", "id": video_id}
-                    vr = await client.get(videos_url, params=videos_params, headers=headers)
+                    vr = await client.get(
+                        videos_url, params=videos_params, headers=headers
+                    )
                     vr.raise_for_status()
                     vdata = vr.json()
                     if vdata.get("items"):
-                        live_chat_id = vdata["items"][0]["liveStreamingDetails"].get("activeLiveChatId")
+                        live_chat_id = vdata["items"][0]["liveStreamingDetails"].get(
+                            "activeLiveChatId"
+                        )
                         if live_chat_id:
-                            logger.info(f"[YouTube] liveChatId from videos: {live_chat_id}")
+                            logger.info(
+                                f"[YouTube] liveChatId from videos: {live_chat_id}"
+                            )
                             return live_chat_id
         except HTTPStatusError as e:
-            logger.warning(f"[YouTube] search/videos failed: {e.response.status_code} - {e.response.text}")
+            logger.warning(
+                f"[YouTube] search/videos failed: {e.response.status_code} - {e.response.text}"
+            )
         except Exception as e:
             logger.warning(f"[YouTube] videos/liveStreamingDetails lookup failed: {e}")
 
@@ -207,7 +224,9 @@ class YouTubeChatClient:
         except HTTPStatusError as e:
             self.is_connected = False
             self.last_error = f"{e.response.status_code}: {e.response.text}"
-            logger.error(f"[YouTube] connect HTTP error: {e.response.status_code} - {e.response.text}")
+            logger.error(
+                f"[YouTube] connect HTTP error: {e.response.status_code} - {e.response.text}"
+            )
         except Exception as e:
             self.is_connected = False
             self.last_error = str(e)
@@ -236,12 +255,18 @@ class YouTubeChatClient:
                 for msg in items:
                     snippet = msg.get("snippet", {})
                     author = msg.get("authorDetails", {})
-                    text = (snippet.get("textMessageDetails") or {}).get("messageText") or ""
+                    text = (snippet.get("textMessageDetails") or {}).get(
+                        "messageText"
+                    ) or ""
                     if not text:
                         continue
                     # Keep: ignore messages authored by our authenticated channel
                     author_channel_id = author.get("channelId")
-                    if author_channel_id and self.authorized_channel_id and author_channel_id == self.authorized_channel_id:
+                    if (
+                        author_channel_id
+                        and self.authorized_channel_id
+                        and author_channel_id == self.authorized_channel_id
+                    ):
                         continue
 
                     username = author.get("displayName", "Unknown")

@@ -1,16 +1,19 @@
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, List, Dict, Any
 
+
 # Payload sent to external broadcaster
 class BroadcasterRequest(BaseModel):
     bbb_health_check_url: str
     bbb_server_url: str
     stream: "StreamConfig"
 
+
 class StreamConfig(BaseModel):
     platform: str
     rtmp_url: str
     stream_key: str
+
 
 # Request body accepted by our API to start a broadcast
 class BroadcasterRobot(BaseModel):
@@ -20,8 +23,10 @@ class BroadcasterRobot(BaseModel):
     password: str
     platform: str
 
+
 class PluginManifests(BaseModel):
     url: str
+
 
 # BBB related request/response models (trimmed to what is currently used)
 class CreateMeetingRequest(BaseModel):
@@ -133,6 +138,7 @@ class IsMeetingRunningRequest(BaseModel):
 class GetRecordingRequest(BaseModel):
     meeting_id: str
 
+
 class MeetingAttendee(BaseModel):
     userID: Optional[str] = None
     fullName: Optional[str] = None
@@ -142,6 +148,7 @@ class MeetingAttendee(BaseModel):
     hasJoinedVoice: Optional[bool] = None
     hasVideo: Optional[bool] = None
     clientType: Optional[str] = None
+
 
 class Meeting(BaseModel):
     meetingID: str
@@ -167,11 +174,13 @@ class Meeting(BaseModel):
     moderatorCount: Optional[int] = None
     attendees: Optional[List[MeetingAttendee]] = None
 
+
 class BroadcasterStreamInfo(BaseModel):
     stream_id: str
     pod_name: Optional[str] = None
     status: str
     created_at: Optional[str] = None
+
 
 class StartBroadcastResponse(BaseModel):
     status: str
@@ -180,10 +189,12 @@ class StartBroadcastResponse(BaseModel):
     stream: BroadcasterStreamInfo
     meeting_info: Dict[str, Any]
 
+
 class BroadcastStatusStream(BaseModel):
     platform: str
     rtmp_url: str
     stream_key: str
+
 
 class BroadcastStatusResponse(BaseModel):
     stream_id: str

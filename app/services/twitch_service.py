@@ -31,4 +31,5 @@ class TwitchService:
             await client.disconnect()
             self._connections.pop(user_id, None)
 
+
 twitch_service = TwitchService()
