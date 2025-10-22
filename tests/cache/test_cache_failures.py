@@ -3,10 +3,17 @@ from app.config import redis_config
 
 
 class FailingCache:
-    async def get(self, key): raise RuntimeError("down")
-    async def set(self, key, value, ex=None): raise RuntimeError("down")
-    async def delete_pattern(self, pattern): raise RuntimeError("down")
-    async def health_check(self): raise RuntimeError("down")
+    async def get(self, key):
+        raise RuntimeError("down")
+
+    async def set(self, key, value, ex=None):
+        raise RuntimeError("down")
+
+    async def delete_pattern(self, pattern):
+        raise RuntimeError("down")
+
+    async def health_check(self):
+        raise RuntimeError("down")
 
 
 @pytest.mark.anyio

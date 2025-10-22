@@ -8,7 +8,9 @@ from uuid import uuid4
 def mock_broadcaster(monkeypatch):
     from app.controllers import broadcaster_controller
 
-    async def fake_start_broadcasting(meeting_id, rtmp_url, stream_key, password, bbb_service):
+    async def fake_start_broadcasting(
+        meeting_id, rtmp_url, stream_key, password, bbb_service
+    ):
         return {
             "status": "success",
             "message": "Broadcaster started successfully",
@@ -381,12 +383,37 @@ class TestBroadcasterController:
     @pytest.mark.parametrize(
         "meeting_id,rtmp_url,stream_key,password",
         [
-            ("meeting-123", "rtmp://live.twitch.tv/live", "test-stream-key", "moderator-password"),
-            ("meeting-123", "rtmp://a.rtmp.youtube.com/live2", "youtube-stream-key", "moderator-password"),
-            ("meeting-123", "rtmps://live-api-s.facebook.com:443/rtmp", "facebook-stream-key", "moderator-password"),
+            (
+                "meeting-123",
+                "rtmp://live.twitch.tv/live",
+                "test-stream-key",
+                "moderator-password",
+            ),
+            (
+                "meeting-123",
+                "rtmp://a.rtmp.youtube.com/live2",
+                "youtube-stream-key",
+                "moderator-password",
+            ),
+            (
+                "meeting-123",
+                "rtmps://live-api-s.facebook.com:443/rtmp",
+                "facebook-stream-key",
+                "moderator-password",
+            ),
             ("meeting-🚀", "rtmp://live.twitch.tv/live", "key-🔑", "password-🔒"),
-            ("meeting-123-ñáéíóú", "rtmp://live.twitch.tv/live", "test-key-!@#$%^&*()", "pass-word-123!@#"),
-            ("meeting-long-key", "rtmp://live.twitch.tv/live", "a" * 1000, "moderator-password"),
+            (
+                "meeting-123-ñáéíóú",
+                "rtmp://live.twitch.tv/live",
+                "test-key-!@#$%^&*()",
+                "pass-word-123!@#",
+            ),
+            (
+                "meeting-long-key",
+                "rtmp://live.twitch.tv/live",
+                "a" * 1000,
+                "moderator-password",
+            ),
         ],
     )
     async def test_broadcaster_success_variants(

@@ -69,7 +69,10 @@ class BroadcasterService:
                 return requests.post(
                     self.broadcaster_api_url,
                     json=broadcaster_payload.model_dump(),
-                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
                     timeout=self.timeout,
                 )
 
@@ -83,7 +86,9 @@ class BroadcasterService:
             data = response.json()
             stream_id = data.get("stream_id")
             if not stream_id:
-                raise HTTPException(status_code=502, detail="Broadcaster response missing stream_id")
+                raise HTTPException(
+                    status_code=502, detail="Broadcaster response missing stream_id"
+                )
 
             return {
                 "status": data.get("status", "running"),
@@ -106,7 +111,9 @@ class BroadcasterService:
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error starting broadcaster: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error starting broadcaster: {str(e)}"
+            )
 
     async def fetch_status(self, stream_id: str) -> Dict[str, Any]:
         """
@@ -115,7 +122,9 @@ class BroadcasterService:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_get():
-            return requests.get(url, headers={"Accept": "application/json"}, timeout=self.timeout)
+            return requests.get(
+                url, headers={"Accept": "application/json"}, timeout=self.timeout
+            )
 
         try:
             resp = await run_in_threadpool(do_get)
@@ -151,7 +160,9 @@ class BroadcasterService:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_delete():
-            return requests.delete(url, headers={"Accept": "application/json"}, timeout=self.timeout)
+            return requests.delete(
+                url, headers={"Accept": "application/json"}, timeout=self.timeout
+            )
 
         max_attempts = 3
         delay_seconds = 2

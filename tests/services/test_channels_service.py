@@ -45,7 +45,9 @@ async def test_get_channels_by_user_id(db_session: AsyncSession, test_user: User
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_id_found_and_not_found(db_session: AsyncSession, test_user: User):
+async def test_get_channel_by_id_found_and_not_found(
+    db_session: AsyncSession, test_user: User
+):
     # Create a channel
     ch = Channel(
         id=uuid.uuid4(),
@@ -99,7 +101,9 @@ async def test_get_channels_all(db_session: AsyncSession, test_user: User):
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_name_found_and_not_found(db_session: AsyncSession, test_user: User):
+async def test_get_channel_by_name_found_and_not_found(
+    db_session: AsyncSession, test_user: User
+):
     desired = f"unique-{uuid.uuid4()}"
     ch = Channel(
         id=uuid.uuid4(),
@@ -150,7 +154,9 @@ async def test_update_channel_success(db_session: AsyncSession, test_user: User)
 
 
 @pytest.mark.anyio
-async def test_update_channel_not_owner_returns_none(db_session: AsyncSession, test_user: User):
+async def test_update_channel_not_owner_returns_none(
+    db_session: AsyncSession, test_user: User
+):
     # Another user and a channel owned by them
     other = User(
         id=uuid.uuid4(),
@@ -183,7 +189,9 @@ async def test_update_channel_not_owner_returns_none(db_session: AsyncSession, t
 
 
 @pytest.mark.anyio
-async def test_delete_channel_success_and_idempotent(db_session: AsyncSession, test_user: User):
+async def test_delete_channel_success_and_idempotent(
+    db_session: AsyncSession, test_user: User
+):
     ch_id = uuid.uuid4()
     db_session.add(
         Channel(
@@ -207,14 +215,18 @@ async def test_delete_channel_success_and_idempotent(db_session: AsyncSession, t
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_channel_not_found(db_session: AsyncSession, test_user: User):
+async def test_get_channel_recordings_channel_not_found(
+    db_session: AsyncSession, test_user: User
+):
     svc = ChannelsService()
     with pytest.raises(Exception):
         await svc.get_channel_recordings(db_session, uuid.uuid4(), test_user.id)
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_wrong_owner(db_session: AsyncSession, test_user: User):
+async def test_get_channel_recordings_wrong_owner(
+    db_session: AsyncSession, test_user: User
+):
     # Create channel owned by other user
     other = User(
         id=uuid.uuid4(),
@@ -244,7 +256,9 @@ async def test_get_channel_recordings_wrong_owner(db_session: AsyncSession, test
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_aggregates(db_session: AsyncSession, test_user: User, monkeypatch):
+async def test_get_channel_recordings_aggregates(
+    db_session: AsyncSession, test_user: User, monkeypatch
+):
     # Create channel owned by test_user
     ch = Channel(
         id=uuid.uuid4(),
@@ -307,9 +321,12 @@ async def test_get_channel_recordings_aggregates(db_session: AsyncSession, test_
             return {"returncode": "SUCCESS", "recordings": []}
 
     import app.services.bbb_service as bbb_mod
+
     monkeypatch.setattr(bbb_mod, "BBBService", FakeBBB)
 
     svc = ChannelsService()
     out = await svc.get_channel_recordings(db_session, ch.id, test_user.id)
     assert out["total_recordings"] == 2
-    assert isinstance(out["recordings"], list) and {r["id"] for r in out["recordings"]} == {"r1", "r2"}
+    assert isinstance(out["recordings"], list) and {
+        r["id"] for r in out["recordings"]
+    } == {"r1", "r2"}

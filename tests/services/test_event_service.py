@@ -33,6 +33,7 @@ def _patch_prepare_event_data(service: EventService):
     Patch prepare_event_data to return a minimal Event instance (avoids depending
     on helper internals).
     """
+
     def _impl(event: EventCreate, user_id, channel_id):
         now = datetime.now()
         return Event(
@@ -51,6 +52,7 @@ def _patch_prepare_event_data(service: EventService):
             created_at=now,
             updated_at=now,
         )
+
     service.event_helpers.prepare_event_data = _impl  # type: ignore
 
 
@@ -89,7 +91,9 @@ async def test_create_event_success(db_session: AsyncSession, test_user: User):
 
 
 @pytest.mark.anyio
-async def test_create_event_duplicate_title_raises(db_session: AsyncSession, test_user: User):
+async def test_create_event_duplicate_title_raises(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -102,7 +106,9 @@ async def test_create_event_duplicate_title_raises(db_session: AsyncSession, tes
 
 
 @pytest.mark.anyio
-async def test_start_event_first_time_creates_meeting_then_idempotent(db_session: AsyncSession, test_user: User):
+async def test_start_event_first_time_creates_meeting_then_idempotent(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -131,7 +137,9 @@ async def test_start_event_first_time_creates_meeting_then_idempotent(db_session
 
 
 @pytest.mark.anyio
-async def test_start_event_wrong_owner_raises(db_session: AsyncSession, test_user: User):
+async def test_start_event_wrong_owner_raises(
+    db_session: AsyncSession, test_user: User
+):
     # Create a second user
     other = User(
         id=uuid.uuid4(),
@@ -205,7 +213,9 @@ async def test_join_event_success(db_session: AsyncSession, test_user: User):
 
 
 @pytest.mark.anyio
-async def test_join_event_missing_meeting_data_raises(db_session: AsyncSession, test_user: User):
+async def test_join_event_missing_meeting_data_raises(
+    db_session: AsyncSession, test_user: User
+):
     # Create raw event without meeting credentials
     now = datetime.now()
     chan = Channel(
@@ -243,7 +253,9 @@ async def test_join_event_missing_meeting_data_raises(db_session: AsyncSession, 
 
 
 @pytest.mark.anyio
-async def test_update_event_add_organizer_and_title(db_session: AsyncSession, test_user: User):
+async def test_update_event_add_organizer_and_title(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -276,7 +288,9 @@ async def test_update_event_add_organizer_and_title(db_session: AsyncSession, te
 
 
 @pytest.mark.anyio
-async def test_update_event_wrong_owner_raises(db_session: AsyncSession, test_user: User):
+async def test_update_event_wrong_owner_raises(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -326,7 +340,9 @@ async def test_delete_event_success(db_session: AsyncSession, test_user: User):
 
 
 @pytest.mark.anyio
-async def test_delete_event_wrong_owner_raises(db_session: AsyncSession, test_user: User):
+async def test_delete_event_wrong_owner_raises(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -352,7 +368,9 @@ async def test_delete_event_wrong_owner_raises(db_session: AsyncSession, test_us
 
 
 @pytest.mark.anyio
-async def test_get_events_by_status_and_user_filter(db_session: AsyncSession, test_user: User):
+async def test_get_events_by_status_and_user_filter(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)
@@ -372,7 +390,9 @@ async def test_get_events_by_status_and_user_filter(db_session: AsyncSession, te
 
 
 @pytest.mark.anyio
-async def test_get_events_by_channel_id_errors(db_session: AsyncSession, test_user: User):
+async def test_get_events_by_channel_id_errors(
+    db_session: AsyncSession, test_user: User
+):
     svc = EventService()
     svc.bbb_service = FakeBBB()
     _patch_prepare_event_data(svc)

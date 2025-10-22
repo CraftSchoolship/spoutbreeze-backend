@@ -27,7 +27,9 @@ async def test_create_rtmp_endpoints_success(db_session: AsyncSession, test_user
 
 
 @pytest.mark.anyio
-async def test_create_rtmp_endpoints_duplicate_stream_key_maps_error(db_session: AsyncSession, test_user: User, monkeypatch):
+async def test_create_rtmp_endpoints_duplicate_stream_key_maps_error(
+    db_session: AsyncSession, test_user: User, monkeypatch
+):
     svc = RtmpEndpointService()
     payload = CreateRtmpEndpointCreate(
         title=f"title-{uuid.uuid4()}",
@@ -37,7 +39,9 @@ async def test_create_rtmp_endpoints_duplicate_stream_key_maps_error(db_session:
 
     async def boom_commit():
         # Simulate Postgres-style named constraint for stream_key
-        raise IntegrityError("stmt", "params", Exception("stream_endpoints_stream_key_key"))
+        raise IntegrityError(
+            "stmt", "params", Exception("stream_endpoints_stream_key_key")
+        )
 
     # Patch only this session's commit for this test
     monkeypatch.setattr(db_session, "commit", boom_commit)
@@ -48,7 +52,9 @@ async def test_create_rtmp_endpoints_duplicate_stream_key_maps_error(db_session:
 
 
 @pytest.mark.anyio
-async def test_create_rtmp_endpoints_duplicate_title_maps_error(db_session: AsyncSession, test_user: User, monkeypatch):
+async def test_create_rtmp_endpoints_duplicate_title_maps_error(
+    db_session: AsyncSession, test_user: User, monkeypatch
+):
     svc = RtmpEndpointService()
     payload = CreateRtmpEndpointCreate(
         title=f"title-{uuid.uuid4()}",
@@ -58,13 +64,20 @@ async def test_create_rtmp_endpoints_duplicate_title_maps_error(db_session: Asyn
 
     async def boom_commit():
         # SQLite/other dialects often include the column name
-        raise IntegrityError("stmt", "params", Exception("UNIQUE constraint failed: stream_endpoints.title"))
+        raise IntegrityError(
+            "stmt",
+            "params",
+            Exception("UNIQUE constraint failed: stream_endpoints.title"),
+        )
 
     monkeypatch.setattr(db_session, "commit", boom_commit)
 
     with pytest.raises(ValueError) as ei:
         await svc.create_rtmp_endpoints(payload, test_user.id, db_session)
-    assert "Title already exists" in str(ei.value) or "unique constraint" in str(ei.value).lower()
+    assert (
+        "Title already exists" in str(ei.value)
+        or "unique constraint" in str(ei.value).lower()
+    )
 
 
 @pytest.mark.anyio
@@ -126,7 +139,9 @@ async def test_get_rtmp_endpoints_by_user_id(db_session: AsyncSession, test_user
 
 
 @pytest.mark.anyio
-async def test_get_rtmp_endpoints_by_id_found_and_not_found(db_session: AsyncSession, test_user: User):
+async def test_get_rtmp_endpoints_by_id_found_and_not_found(
+    db_session: AsyncSession, test_user: User
+):
     ep = RtmpEndpoint(
         id=uuid.uuid4(),
         title=f"one-{uuid.uuid4()}",
@@ -148,7 +163,9 @@ async def test_get_rtmp_endpoints_by_id_found_and_not_found(db_session: AsyncSes
 
 
 @pytest.mark.anyio
-async def test_update_rtmp_endpoints_success_partial(db_session: AsyncSession, test_user: User):
+async def test_update_rtmp_endpoints_success_partial(
+    db_session: AsyncSession, test_user: User
+):
     ep = RtmpEndpoint(
         id=uuid.uuid4(),
         title="old",
@@ -181,7 +198,9 @@ async def test_update_rtmp_endpoints_not_found_returns_none(db_session: AsyncSes
 
 
 @pytest.mark.anyio
-async def test_delete_rtmp_endpoints_success_and_wrong_user(db_session: AsyncSession, test_user: User):
+async def test_delete_rtmp_endpoints_success_and_wrong_user(
+    db_session: AsyncSession, test_user: User
+):
     ep_id = uuid.uuid4()
     db_session.add(
         RtmpEndpoint(

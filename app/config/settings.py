@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     twitch_client_secret: str
     twitch_token_url: str
 
+    # YouTube OAuth settings
+    youtube_client_id: str
+    youtube_client_secret: str
+    youtube_redirect_uri: str
+
     # Database settings
     db_url: str
 
@@ -63,6 +68,10 @@ class Settings(BaseSettings):
     cache_ttl_long: int = 3600  # 1 hour
     cache_ttl_user: int = 900  # 15 minutes
     cache_ttl_bbb: int = 180  # 3 minutes (BBB data changes frequently)
+
+    # Chat Gateway settings
+    chat_gateway_url: str = "http://localhost:8800"
+    chat_gateway_shared_secret: str
 
     model_config = {"env_file": ".env"}
 
