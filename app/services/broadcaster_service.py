@@ -48,14 +48,20 @@ class BroadcasterService:
             join_request = JoinMeetingRequest(
                 meeting_id=meeting_id,
                 password=password,
-                full_name="Broadcaster Bot",
+                full_name="SpoutBreeze Bot",
                 pluginManifests=plugin_manifests,
-                user_id="broadcaster_bot",
+                user_id="spoutbreeze_bot",
             )
             join_url = bbb_service.get_join_url(request=join_request)
             health_url = bbb_service.get_is_meeting_running_url(meeting_id)
 
             broadcaster_payload = BroadcasterRequest(
+                audio_bitrate="128k",
+                video_bitrate="6800k",
+                close_popups=True,
+                fps=25,
+                listen_only=True,
+                resolution="1920x1080",
                 bbb_health_check_url=health_url,
                 bbb_server_url=join_url,
                 stream=StreamConfig(
@@ -143,9 +149,11 @@ class BroadcasterService:
                 "bbb_health_check_url": data.get("bbb_health_check_url"),
                 "bbb_server_url": data.get("bbb_server_url"),
                 "created_at": data.get("created_at"),
-                "updated_at": data.get("updated_at"),
                 "streams": data.get("streams"),
-                "error": data.get("error"),
+                "video_bitrate": data.get("video_bitrate"),
+                "audio_bitrate": data.get("audio_bitrate"),
+                "fps": data.get("fps"),
+                "resolution": data.get("resolution"),
             }
         except RequestsTimeout:
             raise HTTPException(
