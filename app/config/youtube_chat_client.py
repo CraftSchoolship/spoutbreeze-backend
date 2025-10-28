@@ -3,18 +3,12 @@ import httpx
 from httpx import HTTPStatusError
 from datetime import datetime, timedelta
 from sqlalchemy import select
-from typing import Optional, List, Dict, Any, cast
+from typing import Optional, List, Dict, Any
 from app.config.settings import get_settings
 from app.config.logger_config import get_logger
 from app.config.database.session import get_db
 from app.models.youtube_models import YouTubeToken
 from app.services.chat_gateway_client import chat_gateway_client
-from typing import Mapping, Union, Sequence
-
-QueryParamsType = Mapping[
-    str,
-    Union[str, int, float, bool, None, Sequence[Union[str, int, float, bool, None]]],
-]
 
 logger = get_logger("YouTube")
 settings = get_settings()
@@ -36,7 +30,6 @@ class YouTubeChatClient:
     async def get_active_token(self) -> str:
         async for db in get_db():
             import uuid
-
             user_uuid = uuid.UUID(self.user_id)
             stmt = (
                 select(YouTubeToken)
@@ -58,23 +51,20 @@ class YouTubeChatClient:
         # no-op for now (assume valid token); add refresh if needed
         return
 
-    async def log_channel_identity(self) -> None:
+    async def log_channel_identity(self):
         try:
             headers = {"Authorization": f"Bearer {self.token}"}
             url = "https://www.googleapis.com/youtube/v3/channels"
             params = {"part": "id,snippet", "mine": "true"}
             async with httpx.AsyncClient() as client:
-                params_typed: QueryParamsType = params
-                r = await client.get(url, params=params_typed, headers=headers)
+                r = await client.get(url, params=params, headers=headers)
                 r.raise_for_status()
                 data = r.json()
                 if data.get("items"):
                     ch = data["items"][0]
                     self.authorized_channel_id = ch["id"]
                     self.authorized_channel_title = ch["snippet"]["title"]
-                    logger.info(
-                        f"[YouTube] Authorized channel: {self.authorized_channel_title} ({self.authorized_channel_id})"
-                    )
+                    logger.info(f"[YouTube] Authorized channel: {self.authorized_channel_title} ({self.authorized_channel_id})")
         except Exception as e:
             logger.warning(f"[YouTube] Channel identity failed: {e}")
 
@@ -85,15 +75,12 @@ class YouTubeChatClient:
         # Attempt 1: liveBroadcasts.list (active, mine=true)
         try:
             url = "https://www.googleapis.com/youtube/v3/liveBroadcasts"
-            params: QueryParamsType = cast(
-                QueryParamsType,
-                {
-                    "part": "id,snippet,status",
-                    "broadcastStatus": "active",
-                    "mine": "true",
-                    "maxResults": 5,
-                },
-            )
+            params = {
+                "part": "id,snippet,status",
+                # "broadcastStatus": "active",  # valid values: active|completed|upcoming
+                "mine": "true",
+                "maxResults": 5,
+            }
             async with httpx.AsyncClient() as client:
                 r = await client.get(url, params=params, headers=headers)
                 r.raise_for_status()
@@ -102,14 +89,10 @@ class YouTubeChatClient:
                     for item in data["items"]:
                         live_chat_id = item.get("snippet", {}).get("liveChatId")
                         if live_chat_id:
-                            logger.info(
-                                f"[YouTube] liveChatId from broadcasts: {live_chat_id}"
-                            )
+                            logger.info(f"[YouTube] liveChatId from broadcasts: {live_chat_id}")
                             return live_chat_id
         except HTTPStatusError as e:
-            logger.warning(
-                f"[YouTube] broadcasts(active) failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.warning(f"[YouTube] broadcasts(active) failed: {e.response.status_code} - {e.response.text}")
         except Exception as e:
             logger.warning(f"[YouTube] broadcasts(active) lookup failed: {e}")
 
@@ -120,22 +103,17 @@ class YouTubeChatClient:
                 await self.log_channel_identity()
 
             if not self.authorized_channel_id:
-                logger.warning(
-                    "[YouTube] No authorized channel id; cannot search live video"
-                )
+                logger.warning("[YouTube] No authorized channel id; cannot search live video")
                 return None
 
             search_url = "https://www.googleapis.com/youtube/v3/search"
-            search_params: QueryParamsType = cast(
-                QueryParamsType,
-                {
-                    "part": "id",
-                    "channelId": self.authorized_channel_id,
-                    "eventType": "live",
-                    "type": "video",
-                    "maxResults": 1,
-                },
-            )
+            search_params = {
+                "part": "id",
+                "channelId": self.authorized_channel_id,
+                "eventType": "live",
+                "type": "video",
+                "maxResults": 1,
+            }
             async with httpx.AsyncClient() as client:
                 sr = await client.get(search_url, params=search_params, headers=headers)
                 sr.raise_for_status()
@@ -143,28 +121,17 @@ class YouTubeChatClient:
                 if sdata.get("items"):
                     video_id = sdata["items"][0]["id"]["videoId"]
                     videos_url = "https://www.googleapis.com/youtube/v3/videos"
-                    videos_params: QueryParamsType = cast(
-                        QueryParamsType,
-                        {"part": "liveStreamingDetails", "id": video_id},
-                    )
-                    vr = await client.get(
-                        videos_url, params=videos_params, headers=headers
-                    )
+                    videos_params = {"part": "liveStreamingDetails", "id": video_id}
+                    vr = await client.get(videos_url, params=videos_params, headers=headers)
                     vr.raise_for_status()
                     vdata = vr.json()
                     if vdata.get("items"):
-                        live_chat_id = vdata["items"][0]["liveStreamingDetails"].get(
-                            "activeLiveChatId"
-                        )
+                        live_chat_id = vdata["items"][0]["liveStreamingDetails"].get("activeLiveChatId")
                         if live_chat_id:
-                            logger.info(
-                                f"[YouTube] liveChatId from videos: {live_chat_id}"
-                            )
+                            logger.info(f"[YouTube] liveChatId from videos: {live_chat_id}")
                             return live_chat_id
         except HTTPStatusError as e:
-            logger.warning(
-                f"[YouTube] search/videos failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.warning(f"[YouTube] search/videos failed: {e.response.status_code} - {e.response.text}")
         except Exception as e:
             logger.warning(f"[YouTube] videos/liveStreamingDetails lookup failed: {e}")
 
@@ -175,18 +142,13 @@ class YouTubeChatClient:
         if not self.live_chat_id:
             return []
         url = "https://www.googleapis.com/youtube/v3/liveChat/messages"
-        params: QueryParamsType = cast(
-            QueryParamsType,
-            {
-                "liveChatId": self.live_chat_id,
-                "part": "snippet,authorDetails",
-                "maxResults": 200,
-            },
-        )
+        params = {
+            "liveChatId": self.live_chat_id,
+            "part": "snippet,authorDetails",
+            "maxResults": 200,
+        }
         if self.next_page_token:
-            params = cast(
-                QueryParamsType, {**params, "pageToken": self.next_page_token}
-            )
+            params["pageToken"] = self.next_page_token
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             async with httpx.AsyncClient() as client:
@@ -196,6 +158,24 @@ class YouTubeChatClient:
                 self.next_page_token = data.get("nextPageToken")
                 self.polling_interval = data.get("pollingIntervalMillis", 5000) / 1000
                 return data.get("items", [])
+        except HTTPStatusError as e:
+            status = e.response.status_code
+            reason = ""
+            try:
+                reason = e.response.json().get("error", {}).get("errors", [{}])[0].get("reason", "")
+            except Exception:
+                reason = e.response.text
+
+            if status in (403, 404) or reason in ("liveChatEnded", "liveChatNotFound", "forbidden"):
+                self.is_connected = False
+                self.last_error = f"Live chat ended or unavailable ({status}: {reason})"
+                self._stop_polling = True
+                self.live_chat_id = None
+                self.next_page_token = None
+                logger.warning(f"[YouTube] Live chat ended/unavailable; stopping. {status}: {reason}")
+                return []
+            logger.error(f"[YouTube] fetch messages failed: {status} - {e.response.text}")
+            return []
         except Exception as e:
             logger.error(f"[YouTube] fetch messages failed: {e}")
             return []
@@ -238,6 +218,13 @@ class YouTubeChatClient:
                 return
 
             self.live_chat_id = live_id
+
+            # Probe once; fetch handler will clear state if ended/unavailable
+            await self.fetch_chat_messages()
+            if not self.live_chat_id:
+                logger.warning("[YouTube] Live chat unavailable after discovery; not connecting")
+                return
+
             self.is_connected = True
             self._stop_polling = False
             logger.info(f"[YouTube] Polling started (chat: {self.live_chat_id})")
@@ -245,9 +232,7 @@ class YouTubeChatClient:
         except HTTPStatusError as e:
             self.is_connected = False
             self.last_error = f"{e.response.status_code}: {e.response.text}"
-            logger.error(
-                f"[YouTube] connect HTTP error: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"[YouTube] connect HTTP error: {e.response.status_code} - {e.response.text}")
         except Exception as e:
             self.is_connected = False
             self.last_error = str(e)
@@ -276,18 +261,12 @@ class YouTubeChatClient:
                 for msg in items:
                     snippet = msg.get("snippet", {})
                     author = msg.get("authorDetails", {})
-                    text = (snippet.get("textMessageDetails") or {}).get(
-                        "messageText"
-                    ) or ""
+                    text = (snippet.get("textMessageDetails") or {}).get("messageText") or ""
                     if not text:
                         continue
                     # Keep: ignore messages authored by our authenticated channel
                     author_channel_id = author.get("channelId")
-                    if (
-                        author_channel_id
-                        and self.authorized_channel_id
-                        and author_channel_id == self.authorized_channel_id
-                    ):
+                    if author_channel_id and self.authorized_channel_id and author_channel_id == self.authorized_channel_id:
                         continue
 
                     username = author.get("displayName", "Unknown")
@@ -309,4 +288,6 @@ class YouTubeChatClient:
     async def disconnect(self):
         self._stop_polling = True
         self.is_connected = False
+        self.live_chat_id = None
+        self.next_page_token = None
         logger.info(f"[YouTube] Disconnected for user {self.user_id}")

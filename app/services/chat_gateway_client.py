@@ -1,7 +1,6 @@
 import os
 import httpx
 import logging
-from typing import Optional
 
 logger = logging.getLogger("ChatGatewayClient")
 
@@ -20,7 +19,7 @@ class ChatGatewayClient:
         user_id: str,
         username: str,
         message: str,
-        message_id: Optional[str] = None,
+        message_id: str = None,
     ) -> None:
         """Forward incoming platform message to gateway for normalization"""
         url = f"{self.base_url}/messages/incoming"
