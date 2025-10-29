@@ -1,4 +1,3 @@
-import types
 import pytest
 from requests.exceptions import HTTPError, Timeout, RequestException
 
