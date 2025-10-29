@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from typing import Optional, Dict, Any
 import contextlib  # ADD
 
-from app.config.chat_manager import chat_manager
 from app.config.settings import get_settings
 from app.config.logger_config import get_logger
 from app.config.database.session import get_db
