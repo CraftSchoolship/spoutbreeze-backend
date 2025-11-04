@@ -520,7 +520,7 @@ class YouTubeChatClient:
                 logger.error(f"[YouTube] poll error: {e}")
 
                 backoff_time = min(
-                    60, 2**consecutive_errors
+                    5 * (2**consecutive_errors), 60
                 )  # Exponential backoff up to 60s
                 await asyncio.sleep(backoff_time)
 
