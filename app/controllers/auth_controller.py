@@ -55,16 +55,20 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
     )
     refresh_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
 
+    # Determine cookie settings based on environment
+    is_production = settings.env == "production"
+    cookie_domain = settings.domain if is_production else None
+
     # Set access token cookie
     response.set_cookie(
         key="access_token",
         value=token_data["access_token"],
         expires=access_token_expires,
         httponly=True,
-        secure=False,  # change in production to True
-        samesite="lax",  # change to none for cross-domain
+        secure=is_production,  # True in production, False in development
+        samesite="lax",  # Use "none" with secure=True for cross-domain in production
         path="/",
-        domain=None,  # change to our domain in production
+        domain=cookie_domain,
     )
 
     # Set refresh token cookie
@@ -73,10 +77,10 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         value=token_data["refresh_token"],
         expires=refresh_token_expires,
         httponly=True,
-        secure=False,  # change in production to True
-        samesite="lax",  # change to none for cross-domain
+        secure=is_production,  # True in production, False in development
+        samesite="lax",  # Use "none" with secure=True for cross-domain in production
         path="/",
-        domain=None,  # change to our domain in production
+        domain=cookie_domain,
     )
 
 
@@ -87,11 +91,13 @@ def clear_auth_cookies(response: Response) -> None:
     Args:
         response: FastAPI Response object
     """
-    # Clear your application cookies
-    response.delete_cookie("access_token", path="/", domain=settings.domain)
-    response.delete_cookie("refresh_token", path="/", domain=settings.domain)
+    # Clear your application cookies - use None for domain in development
+    cookie_domain = settings.domain if settings.env == "production" else None
 
-    # Clear Keycloak cookies - these need to match your Keycloak domain
+    response.delete_cookie("access_token", path="/", domain=cookie_domain)
+    response.delete_cookie("refresh_token", path="/", domain=cookie_domain)
+
+    # Clear Keycloak cookies
     keycloak_cookies = [
         "AUTH_SESSION_ID",
         "KC_AUTH_SESSION_HASH",
@@ -99,21 +105,19 @@ def clear_auth_cookies(response: Response) -> None:
         "KEYCLOAK_SESSION",
     ]
 
-    # Get the Keycloak domain from your server URL
-    keycloak_domain = settings.domain  # Same as your main domain
-
     for cookie_name in keycloak_cookies:
-        # Clear for main domain
-        response.delete_cookie(cookie_name, path="/", domain=keycloak_domain)
-        # Clear for realm-specific path
-        response.delete_cookie(
-            cookie_name,
-            path=f"/realms/{settings.keycloak_realm}/",
-            domain=keycloak_domain,
-        )
-        # Clear without domain (for exact domain matches)
+        # Clear without domain (for exact domain matches) - this works for localhost
         response.delete_cookie(cookie_name, path="/")
         response.delete_cookie(cookie_name, path=f"/realms/{settings.keycloak_realm}/")
+
+        # Only set domain in production
+        if settings.env == "production" and cookie_domain:
+            response.delete_cookie(cookie_name, path="/", domain=cookie_domain)
+            response.delete_cookie(
+                cookie_name,
+                path=f"/realms/{settings.keycloak_realm}/",
+                domain=cookie_domain,
+            )
 
 
 def extract_keycloak_roles(user_info: dict, client_id: str) -> Optional[list]:
