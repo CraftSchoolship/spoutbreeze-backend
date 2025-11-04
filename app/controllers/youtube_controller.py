@@ -239,7 +239,10 @@ async def youtube_attach_by_video(
 
     # ensure token
     if not client.token:
-        client.token = await client.get_active_token()
+        access_token, refresh_token, expires_at = await client.get_active_token()
+        client.token = access_token
+        client.refresh_token = refresh_token
+        client.token_expires_at = expires_at
 
     headers = {"Authorization": f"Bearer {client.token}"}
     async with httpx.AsyncClient() as http:
