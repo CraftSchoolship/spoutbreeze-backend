@@ -231,6 +231,12 @@ async def youtube_attach_by_video(
         # give service a client
         client = youtube_service.get_connection_for_user(str(current_user.id))
 
+    # Ensure client exists after attempting to start connection
+    if not client:
+        raise HTTPException(
+            status_code=500, detail="Failed to create YouTube client connection"
+        )
+
     # ensure token
     if not client.token:
         client.token = await client.get_active_token()

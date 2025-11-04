@@ -105,7 +105,10 @@ class YouTubeChatClient:
             return False
 
     async def _save_refreshed_token(
-        self, access_token: str, refresh_token: Optional[str], expires_at: datetime
+        self,
+        access_token: Optional[str],
+        refresh_token: Optional[str],
+        expires_at: datetime,
     ):
         """Save refreshed token back to database"""
         async for db in get_db():
@@ -217,6 +220,11 @@ class YouTubeChatClient:
                     raise
                 await asyncio.sleep(2**attempt)
 
+        # If all retries exhausted without success
+        raise Exception(
+            f"Failed to complete API request after {max_retries + 1} attempts"
+        )
+
     async def log_channel_identity(self):
         """Get and log the authorized channel identity"""
         try:
@@ -260,53 +268,8 @@ class YouTubeChatClient:
                         return live_chat_id
         except Exception as e:
             logger.warning(f"[YouTube] broadcasts lookup failed: {e}")
-            return None
 
-        # Attempt 2: search live video for this channel
-        # will not use this method for now it uses 100 quota units
-        # try:
-        #     if not self.authorized_channel_id:
-        #         await self.log_channel_identity()
-
-        #     if not self.authorized_channel_id:
-        #         logger.warning(
-        #             "[YouTube] No authorized channel id; cannot search live video"
-        #         )
-        #         return None
-
-        #     search_data = await self._make_api_request(
-        #         "GET",
-        #         "https://www.googleapis.com/youtube/v3/search",
-        #         params={
-        #             "part": "id",
-        #             "channelId": self.authorized_channel_id,
-        #             "eventType": "live",
-        #             "type": "video",
-        #             "maxResults": 1,
-        #         },
-        #     )
-
-        #     if search_data.get("items"):
-        #         video_id = search_data["items"][0]["id"]["videoId"]
-
-        #         video_data = await self._make_api_request(
-        #             "GET",
-        #             "https://www.googleapis.com/youtube/v3/videos",
-        #             params={"part": "liveStreamingDetails", "id": video_id},
-        #         )
-
-        #         if video_data.get("items"):
-        #             live_chat_id = video_data["items"][0]["liveStreamingDetails"].get(
-        #                 "activeLiveChatId"
-        #             )
-        #             if live_chat_id:
-        #                 logger.info(f"[YouTube] liveChatId from videos: {live_chat_id}")
-        #                 return live_chat_id
-        # except Exception as e:
-        #     logger.warning(f"[YouTube] search/videos lookup failed: {e}")
-
-        # logger.warning("[YouTube] No active live broadcast found (no liveChatId)")
-        # return None
+        return None
 
     async def fetch_chat_messages(self) -> List[Dict[str, Any]]:
         """Fetch new messages from live chat"""

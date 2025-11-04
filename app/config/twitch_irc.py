@@ -332,7 +332,21 @@ class TwitchIRCClient:
 
         if "PRIVMSG" in message:
             try:
-                # Parse message
+                # Extract message ID from IRC tags (if available)
+                message_id = None
+                if message.startswith("@"):
+                    # Parse IRC tags
+                    tags_end = message.find(" ")
+                    if tags_end > 0:
+                        tags_section = message[:tags_end]
+                        tags = dict(
+                            tag.split("=", 1)
+                            for tag in tags_section[1:].split(";")
+                            if "=" in tag
+                        )
+                        message_id = tags.get("id")
+
+                # Parse message content
                 parts = message.split(":", 2)
                 if len(parts) >= 3:
                     username = parts[1].split("!")[0]
@@ -340,14 +354,14 @@ class TwitchIRCClient:
 
                     logger.info(f"[TwitchIRC] {username}: {msg_content}")
 
-                    # Forward to Chat Gateway (simplified call)
+                    # Forward to Chat Gateway with message_id
                     try:
                         await chat_gateway_client.forward_message(
                             platform="twitch",
                             user_id=self.user_id or username,
                             username=username,
                             message=msg_content,
-                            message_id=None,  # ADD
+                            message_id=message_id,
                         )
                     except Exception as e:
                         logger.error(f"[TwitchIRC] Failed to forward to gateway: {e}")
