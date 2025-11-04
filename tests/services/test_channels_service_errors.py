@@ -4,7 +4,6 @@ from sqlalchemy.exc import IntegrityError
 
 from app.services.channels_service import ChannelsService
 from app.models.channel.channels_schemas import ChannelCreate, ChannelUpdate
-from app.models.channel.channels_model import Channel
 from app.models.user_models import User
 
 

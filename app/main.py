@@ -125,7 +125,7 @@ app = FastAPI(
 async def log_requests(request: Request, call_next):
     start_time = time.time()
     logger.info(f"Incoming request: {request.method} {request.url}")
-    logger.info(f"Headers: {dict(request.headers)}")
+    # logger.info(f"Headers: {dict(request.headers)}")
 
     response = await call_next(request)
 

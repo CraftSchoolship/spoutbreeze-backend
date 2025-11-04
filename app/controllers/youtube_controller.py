@@ -12,7 +12,6 @@ from datetime import datetime, timedelta
 import logging
 from pydantic import BaseModel
 import os
-from urllib.parse import urlencode
 import httpx
 from app.config.settings import get_settings
 import asyncio  # ADD
@@ -227,19 +226,23 @@ async def youtube_attach_by_video(
 ):
     # use user's token via client
     client = youtube_service.get_connection_for_user(str(current_user.id))
-    if client is None:
+    if not client:
         await youtube_service.start_connection_for_user(str(current_user.id))
+        # give service a client
         client = youtube_service.get_connection_for_user(str(current_user.id))
 
-    # If still None, fail early to satisfy type checker and runtime safety
-    if client is None:
+    # Ensure client exists after attempting to start connection
+    if not client:
         raise HTTPException(
-            status_code=500, detail="Failed to initialize YouTube client"
+            status_code=500, detail="Failed to create YouTube client connection"
         )
 
     # ensure token
-    if client.token is None:
-        client.token = await client.get_active_token()
+    if not client.token:
+        access_token, refresh_token, expires_at = await client.get_active_token()
+        client.token = access_token
+        client.refresh_token = refresh_token
+        client.token_expires_at = expires_at
 
     headers = {"Authorization": f"Bearer {client.token}"}
     async with httpx.AsyncClient() as http:
@@ -263,3 +266,102 @@ async def youtube_attach_by_video(
         "video_id": payload.video_id,
         "live_chat_id": live_chat_id,
     }
+
+
+@router.get("/youtube/token-status")
+async def youtube_token_status(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return the current user's YouTube token status (mirrors Twitch token status shape)
+    """
+    try:
+        stmt = (
+            select(YouTubeToken)
+            .where(YouTubeToken.user_id == current_user.id)
+            .order_by(YouTubeToken.created_at.desc())
+        )
+        result = await db.execute(stmt)
+        token = result.scalars().first()
+
+        now = datetime.now()
+        if not token:
+            return {
+                "user_id": str(current_user.id),
+                "has_token": False,
+                "token_preview": None,
+                "expires_at": now.isoformat(),
+                "current_time": now.isoformat(),
+                "time_until_expiry": "0s",
+                "is_expired": True,
+                "expires_soon": False,
+                "has_refresh_token": False,
+                "created_at": now.isoformat(),
+                "error": None,
+            }
+
+        expires_at = token.expires_at
+        diff = (expires_at - now).total_seconds()
+        is_expired = diff <= 0
+        expires_soon = (diff > 0) and (diff <= 60 * 60)  # within 60 min
+
+        # Simple preview
+        token_preview = f"{token.access_token[:6]}..." if token.access_token else None
+
+        # Human-ish time until expiry
+        if diff <= 0:
+            time_until_expiry = "0s"
+        else:
+            mins = int(diff // 60)
+            if mins < 60:
+                time_until_expiry = f"{mins}m"
+            else:
+                hrs = mins // 60
+                rem = mins % 60
+                time_until_expiry = f"{hrs}h {rem}m"
+
+        return {
+            "user_id": str(current_user.id),
+            "has_token": token.is_active,
+            "token_preview": token_preview,
+            "expires_at": expires_at.isoformat(),
+            "current_time": now.isoformat(),
+            "time_until_expiry": time_until_expiry,
+            "is_expired": is_expired,
+            "expires_soon": expires_soon,
+            "has_refresh_token": bool(token.refresh_token),
+            "created_at": (token.created_at or now).isoformat(),
+            "error": None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/youtube/token")
+async def youtube_revoke_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Deactivate all active YouTube tokens for the user
+    """
+    try:
+        stmt = (
+            update(YouTubeToken)
+            .where(
+                YouTubeToken.user_id == current_user.id, YouTubeToken.is_active == True
+            )
+            .values(is_active=False, updated_at=datetime.now())
+        )
+        await db.execute(stmt)
+        await db.commit()
+        return {"message": "YouTube token revoked"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/youtube/disconnect")
+async def disconnect_youtube(current_user: User = Depends(get_current_user)):
+    await youtube_service.stop_connection_for_user(str(current_user.id))
+    return {"message": "YouTube chat disconnected"}

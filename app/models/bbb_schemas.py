@@ -4,6 +4,12 @@ from typing import Optional, List, Dict, Any
 
 # Payload sent to external broadcaster
 class BroadcasterRequest(BaseModel):
+    audio_bitrate: str = "128k"
+    video_bitrate: str = "6800k"
+    close_popups: bool = True
+    fps: int = 25
+    listen_only: bool = True
+    resolution: str = "1920x1080"
     bbb_health_check_url: str
     bbb_server_url: str
     stream: "StreamConfig"
@@ -190,12 +196,6 @@ class StartBroadcastResponse(BaseModel):
     meeting_info: Dict[str, Any]
 
 
-class BroadcastStatusStream(BaseModel):
-    platform: str
-    rtmp_url: str
-    stream_key: str
-
-
 class BroadcastStatusResponse(BaseModel):
     stream_id: str
     status: str
@@ -203,6 +203,8 @@ class BroadcastStatusResponse(BaseModel):
     bbb_health_check_url: Optional[str] = None
     bbb_server_url: Optional[str] = None
     created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    streams: Optional[List[BroadcastStatusStream]] = None
-    error: Optional[str] = None
+    streams: Optional[List[StreamConfig]] = None
+    video_bitrate: Optional[str] = None
+    audio_bitrate: Optional[str] = None
+    fps: Optional[int] = None
+    resolution: Optional[str] = None

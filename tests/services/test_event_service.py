@@ -1,6 +1,6 @@
 import uuid
 import pytest
-from datetime import datetime, timedelta, time, timezone as dt_timezone
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 

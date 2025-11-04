@@ -10,7 +10,6 @@ from app.models.user_models import User
 from app.models.channel.channels_model import Channel
 from app.models.stream_schemas import CreateRtmpEndpointCreate
 from app.models.event.event_schemas import EventCreate
-from app.models.event.event_models import EventStatus
 from app.config import redis_config
 from app.services.cached import user_service_cached as user_mod
 from app.services.cached import channels_service_cached as ch_mod
