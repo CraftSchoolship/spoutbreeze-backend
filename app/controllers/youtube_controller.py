@@ -6,8 +6,6 @@ from app.config.youtube_auth import YouTubeAuth
 from app.models.youtube_models import YouTubeToken
 from app.models.user_models import User
 from app.controllers.user_controller import get_current_user
-from app.services.youtube_service import youtube_service
-from app.services.chat_gateway_client import chat_gateway_client
 from datetime import datetime, timedelta
 import logging
 from pydantic import BaseModel
@@ -89,183 +87,59 @@ async def youtube_callback(
 async def connect_to_youtube(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    """Start YouTube chat polling for this user"""
+    """Tell Gateway to start YouTube connection"""
     try:
-        # Check if user has token
-        stmt = select(YouTubeToken).where(
-            YouTubeToken.user_id == current_user.id,
-            YouTubeToken.is_active == True,
-            YouTubeToken.expires_at > datetime.now(),
-        )
-        result = await db.execute(stmt)
-        token = result.scalars().first()
-
-        if not token:
-            raise HTTPException(status_code=400, detail="No active YouTube token found")
-
-        # Start chat polling
-        await youtube_service.start_connection_for_user(str(current_user.id))
-        await chat_gateway_client.register_platform("youtube", str(current_user.id))
-
-        return {
-            "message": "YouTube chat connection started",
-            "user_id": str(current_user.id),
-        }
-    except HTTPException:
-        raise
+        async with httpx.AsyncClient(timeout=5) as client:
+            gateway_url = os.getenv("CHAT_GATEWAY_URL", "http://localhost:8800")
+            await client.post(
+                f"{gateway_url}/platforms/youtube/connect",
+                params={"user_id": str(current_user.id)},
+                headers={"X-Internal-Auth": SHARED_SECRET},
+            )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to notify gateway: {e}")
+
+    return {"status": "connection_requested"}
 
 
-class SendMessageRequest(BaseModel):
-    user_id: str
-    message: str
-
-
-@router.post("/youtube/send-message")
-async def send_youtube_message(
-    request: SendMessageRequest,
-    x_internal_auth: str = Header(None, alias="X-Internal-Auth"),
+@router.post("/youtube/connect-with-chat-id")
+async def connect_youtube_with_chat_id(
+    live_chat_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Send a message to YouTube Live Chat (internal endpoint for gateway)"""
-    if not x_internal_auth or x_internal_auth != SHARED_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
+    """Tell Gateway to connect YouTube with a specific chat ID"""
     try:
-        client = youtube_service.get_connection_for_user(request.user_id)
-
-        if (
-            not client
-            or not client.is_connected
-            or not getattr(client, "live_chat_id", None)
-        ):
-            logger.info(
-                f"[YouTube] No active connection for {request.user_id}, starting..."
+        async with httpx.AsyncClient(timeout=5) as client:
+            gateway_url = os.getenv("CHAT_GATEWAY_URL", "http://localhost:8800")
+            await client.post(
+                f"{gateway_url}/platforms/youtube/connect-with-chat-id",
+                params={"user_id": str(current_user.id), "live_chat_id": live_chat_id},
+                headers={"X-Internal-Auth": SHARED_SECRET},
             )
-            await youtube_service.start_connection_for_user(request.user_id)
-
-            # Wait up to 5s for connect + liveChatId discovery
-            for _ in range(10):
-                client = youtube_service.get_connection_for_user(request.user_id)
-                if (
-                    client
-                    and client.is_connected
-                    and getattr(client, "live_chat_id", None)
-                ):
-                    break
-                await asyncio.sleep(0.5)
-
-        if (
-            not client
-            or not client.is_connected
-            or not getattr(client, "live_chat_id", None)
-        ):
-            raise HTTPException(
-                status_code=404,
-                detail=f"No active YouTube live chat for user {request.user_id}",
-            )
-
-        await client.send_message(request.message)
-        logger.info(
-            f"[YouTube] → Sent message for user {request.user_id}: {request.message}"
-        )
-        return {
-            "status": "success",
-            "message": "Message sent to YouTube",
-            "content": request.message,
-        }
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"[YouTube] Error sending message: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to notify gateway: {e}")
+
+    return {"status": "connection_requested", "chat_id": live_chat_id}
 
 
-# Optional: quick status endpoint for debugging from Swagger
-@router.get("/youtube/status")
-async def youtube_status(current_user: User = Depends(get_current_user)):
-    client = youtube_service.get_connection_for_user(str(current_user.id))
-    return {
-        "connected": bool(client and client.is_connected),
-        "live_chat_id": getattr(client, "live_chat_id", None),
-        "polling_interval": getattr(client, "polling_interval", None),
-        "authorized_channel_id": getattr(client, "authorized_channel_id", None),  # ADD
-        "authorized_channel_title": getattr(
-            client, "authorized_channel_title", None
-        ),  # ADD
-        "last_error": getattr(client, "last_error", None),  # ADD
-    }
+# # Optional: quick status endpoint for debugging from Swagger
+# @router.get("/youtube/status")
+# async def youtube_status(current_user: User = Depends(get_current_user)):
+#     client = youtube_service.get_connection_for_user(str(current_user.id))
+#     return {
+#         "connected": bool(client and client.is_connected),
+#         "live_chat_id": getattr(client, "live_chat_id", None),
+#         "polling_interval": getattr(client, "polling_interval", None),
+#         "authorized_channel_id": getattr(client, "authorized_channel_id", None),  # ADD
+#         "authorized_channel_title": getattr(
+#             client, "authorized_channel_title", None
+#         ),  # ADD
+#         "last_error": getattr(client, "last_error", None),  # ADD
+#     }
 
 
 from pydantic import BaseModel
-
-
-class AttachChatIdRequest(BaseModel):
-    live_chat_id: str
-
-
-class AttachByVideoIdRequest(BaseModel):
-    video_id: str
-
-
-# Force attach by live_chat_id (debug/unblock)
-@router.post("/youtube/attach-chat")
-async def youtube_attach_chat(
-    payload: AttachChatIdRequest,
-    current_user: User = Depends(get_current_user),
-):
-    await youtube_service.start_with_chat_id(str(current_user.id), payload.live_chat_id)
-    return {"status": "attached", "live_chat_id": payload.live_chat_id}
-
-
-# Resolve from video_id then attach
-@router.post("/youtube/attach-by-video")
-async def youtube_attach_by_video(
-    payload: AttachByVideoIdRequest,
-    current_user: User = Depends(get_current_user),
-):
-    # use user's token via client
-    client = youtube_service.get_connection_for_user(str(current_user.id))
-    if not client:
-        await youtube_service.start_connection_for_user(str(current_user.id))
-        # give service a client
-        client = youtube_service.get_connection_for_user(str(current_user.id))
-
-    # Ensure client exists after attempting to start connection
-    if not client:
-        raise HTTPException(
-            status_code=500, detail="Failed to create YouTube client connection"
-        )
-
-    # ensure token
-    if not client.token:
-        access_token, refresh_token, expires_at = await client.get_active_token()
-        client.token = access_token
-        client.refresh_token = refresh_token
-        client.token_expires_at = expires_at
-
-    headers = {"Authorization": f"Bearer {client.token}"}
-    async with httpx.AsyncClient() as http:
-        vr = await http.get(
-            "https://www.googleapis.com/youtube/v3/videos",
-            params={"part": "liveStreamingDetails", "id": payload.video_id},
-            headers=headers,
-        )
-        vr.raise_for_status()
-        vdata = vr.json()
-        if not vdata.get("items"):
-            raise HTTPException(status_code=404, detail="Video not found")
-        live_chat_id = vdata["items"][0]["liveStreamingDetails"].get("activeLiveChatId")
-        if not live_chat_id:
-            raise HTTPException(
-                status_code=404, detail="No activeLiveChatId on this video"
-            )
-    await youtube_service.start_with_chat_id(str(current_user.id), live_chat_id)
-    return {
-        "status": "attached",
-        "video_id": payload.video_id,
-        "live_chat_id": live_chat_id,
-    }
 
 
 @router.get("/youtube/token-status")
@@ -359,9 +233,3 @@ async def youtube_revoke_token(
         return {"message": "YouTube token revoked"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/youtube/disconnect")
-async def disconnect_youtube(current_user: User = Depends(get_current_user)):
-    await youtube_service.stop_connection_for_user(str(current_user.id))
-    return {"message": "YouTube chat disconnected"}

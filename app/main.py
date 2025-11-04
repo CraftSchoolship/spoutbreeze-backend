@@ -22,7 +22,8 @@ from app.controllers.twitch_controller import router as twitch_router
 from app.controllers.youtube_controller import router as youtube_router
 
 from app.config.chat_manager import chat_manager
-from app.config.twitch_irc import TwitchIRCClient
+
+# from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.config.redis_config import cache
@@ -31,7 +32,7 @@ logger = get_logger("Main")
 setting = get_settings()
 scheduler = AsyncIOScheduler()
 bbb_service = BBBService()
-twitch_client = TwitchIRCClient()
+# twitch_client = TwitchIRCClient()
 
 
 # Add request logging middleware
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI):
 
     # Startup: schedule the IRC client
     twitch_tasks = asyncio.gather(
-        twitch_client.connect(),
+        # twitch_client.connect(),
         # twitch_client.start_token_refresh_scheduler(),
         return_exceptions=True,
     )
@@ -247,22 +248,22 @@ app.include_router(broadcaster_router)
 app.include_router(bbb_router)
 
 
-@app.websocket("/ws/chat/")
-async def chat_endpoint(websocket: WebSocket):
-    """
-    WebSocket endpoint for chat messages
-    """
-    logger.info("WebSocket connection requested")
-    await chat_manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            if data.startswith("/twitch"):
-                message = data[len("/twitch ") :]
-                await twitch_client.send_message(message)
-                logger.info(f"[TwitchIRC] Sending message: {message}")
-            else:
-                await chat_manager.broadcast(data)
-    except WebSocketDisconnect:
-        chat_manager.disconnect(websocket)
-        logger.info("[Chat] Client disconnected")
+# @app.websocket("/ws/chat/")
+# async def chat_endpoint(websocket: WebSocket):
+#     """
+#     WebSocket endpoint for chat messages
+#     """
+#     logger.info("WebSocket connection requested")
+#     await chat_manager.connect(websocket)
+#     try:
+#         while True:
+#             data = await websocket.receive_text()
+#             if data.startswith("/twitch"):
+#                 message = data[len("/twitch ") :]
+#                 await twitch_client.send_message(message)
+#                 logger.info(f"[TwitchIRC] Sending message: {message}")
+#             else:
+#                 await chat_manager.broadcast(data)
+#     except WebSocketDisconnect:
+#         chat_manager.disconnect(websocket)
+#         logger.info("[Chat] Client disconnected")
