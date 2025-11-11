@@ -14,6 +14,7 @@ from app.models.event.event_models import Event
 
 if TYPE_CHECKING:
     from app.models.twitch.twitch_models import TwitchToken
+    from app.models.payment_models import Subscription
 
 
 class User(Base):
@@ -68,6 +69,9 @@ class User(Base):
     )
     twitch_tokens: Mapped[List["TwitchToken"]] = relationship(
         "TwitchToken", back_populates="user", cascade="all, delete-orphan"
+    )
+    subscription: Mapped[Optional["Subscription"]] = relationship(
+        "Subscription", back_populates="user", cascade="all, delete-orphan", uselist=False
     )
 
     def get_roles_list(self) -> List[str]:

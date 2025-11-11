@@ -10,6 +10,10 @@ import time
 
 from app.services.bbb_service import BBBService
 
+# Import models to ensure they are registered with SQLAlchemy
+from app.models import user_models, payment_models, youtube_models  # noqa: F401
+from app.models.twitch import twitch_models  # noqa: F401
+
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router
 from app.controllers.broadcaster_controller import router as broadcaster_router
@@ -20,6 +24,7 @@ from app.controllers.event_controller import router as event_router
 from app.controllers.health_controller import router as health_router
 from app.controllers.twitch_controller import router as twitch_router
 from app.controllers.youtube_controller import router as youtube_router
+from app.controllers.payment_controller import router as payment_router
 
 from app.config.chat_manager import chat_manager
 from app.config.twitch_irc import TwitchIRCClient
@@ -245,6 +250,7 @@ app.include_router(event_router)
 app.include_router(stream_router)
 app.include_router(broadcaster_router)
 app.include_router(bbb_router)
+app.include_router(payment_router)
 
 
 @app.websocket("/ws/chat/")

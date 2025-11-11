@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     chat_gateway_url: str = "http://localhost:8800"
     chat_gateway_shared_secret: str
 
+    # Stripe settings
+    stripe_secret_key: str
+    stripe_publishable_key: str
+    stripe_webhook_secret: str
+    stripe_free_price_id: str = ""  # Optional, for Free plan (if you create one in Stripe)
+    stripe_pro_price_id: str = ""  # Will be configured from Stripe dashboard
+    stripe_enterprise_price_id: str = ""  # Will be configured from Stripe dashboard
+
     model_config = {"env_file": ".env"}
 
 

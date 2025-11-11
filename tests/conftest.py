@@ -13,6 +13,7 @@ from app.models.channel.channels_model import Channel
 from app.models.stream_models import RtmpEndpoint
 from app.models.event.event_models import Event
 from app.models.event.event_models import EventStatus  # Import EventStatus
+from app.models.payment_models import Subscription, Transaction
 
 
 # Test database URL (SQLite for simplicity in tests)
@@ -68,6 +69,8 @@ async def db_session(setup_database):
             # Clean up database after each test
             await session.rollback()
             # Delete all data from tables to ensure clean state
+            await session.execute(Transaction.__table__.delete())
+            await session.execute(Subscription.__table__.delete())
             await session.execute(Event.__table__.delete())
             await session.execute(RtmpEndpoint.__table__.delete())
             await session.execute(Channel.__table__.delete())
