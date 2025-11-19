@@ -71,7 +71,10 @@ class User(Base):
         "TwitchToken", back_populates="user", cascade="all, delete-orphan"
     )
     subscription: Mapped[Optional["Subscription"]] = relationship(
-        "Subscription", back_populates="user", cascade="all, delete-orphan", uselist=False
+        "Subscription",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def get_roles_list(self) -> List[str]:

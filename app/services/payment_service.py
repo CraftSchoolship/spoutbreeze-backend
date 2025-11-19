@@ -3,6 +3,7 @@ Stripe Payment Service
 Handles all Stripe-related operations including subscription management,
 checkout sessions, customer portal, and webhook processing.
 """
+
 import stripe
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
@@ -13,11 +14,11 @@ from fastapi import HTTPException, status
 from app.config.settings import get_settings
 from app.config.logger_config import get_logger
 from app.models.payment_models import (
-    Subscription, 
-    Transaction, 
-    SubscriptionPlan, 
+    Subscription,
+    Transaction,
+    SubscriptionPlan,
     SubscriptionStatus,
-    TransactionType
+    TransactionType,
 )
 from app.models.user_models import User
 from app.models.payment_schemas import (
@@ -57,7 +58,7 @@ class PaymentService:
                 metadata={
                     "user_id": str(user.id),
                     "username": user.username,
-                }
+                },
             )
             logger.info(f"Created Stripe customer {customer.id} for user {user.id}")
             return customer.id
@@ -65,7 +66,7 @@ class PaymentService:
             logger.error(f"Failed to create Stripe customer: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create customer: {str(e)}"
+                detail=f"Failed to create customer: {str(e)}",
             )
 
     @staticmethod
@@ -90,10 +91,12 @@ class PaymentService:
             # Create checkout session
             checkout_params = {
                 "customer": customer_id,
-                "line_items": [{
-                    "price": price_id,
-                    "quantity": 1,
-                }],
+                "line_items": [
+                    {
+                        "price": price_id,
+                        "quantity": 1,
+                    }
+                ],
                 "mode": "subscription",
                 "success_url": success_url,
                 "cancel_url": cancel_url,
@@ -118,16 +121,13 @@ class PaymentService:
 
             logger.info(f"Created checkout session {session.id} for user {user.id}")
 
-            return CheckoutSessionResponse(
-                session_id=session.id,
-                url=session.url
-            )
+            return CheckoutSessionResponse(session_id=session.id, url=session.url)
 
         except stripe.error.StripeError as e:
             logger.error(f"Failed to create checkout session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create checkout session: {str(e)}"
+                detail=f"Failed to create checkout session: {str(e)}",
             )
 
     @staticmethod
@@ -147,7 +147,7 @@ class PaymentService:
             if not subscription or not subscription.stripe_customer_id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No subscription found"
+                    detail="No subscription found",
                 )
 
             # Create portal session
@@ -164,11 +164,13 @@ class PaymentService:
             logger.error(f"Failed to create portal session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create portal session: {str(e)}"
+                detail=f"Failed to create portal session: {str(e)}",
             )
 
     @staticmethod
-    async def get_user_subscription(user: User, db: AsyncSession) -> Optional[Subscription]:
+    async def get_user_subscription(
+        user: User, db: AsyncSession
+    ) -> Optional[Subscription]:
         """Get user's subscription"""
         result = await db.execute(
             select(Subscription).where(Subscription.user_id == user.id)
@@ -176,14 +178,18 @@ class PaymentService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def reconcile_subscription_from_stripe(user: User, db: AsyncSession) -> Optional[Subscription]:
+    async def reconcile_subscription_from_stripe(
+        user: User, db: AsyncSession
+    ) -> Optional[Subscription]:
         """Reconcile local subscription with Stripe state for the user's customer.
 
         This updates the local DB if Stripe has a more recent/active subscription
         (useful when webhooks are delayed or misconfigured).
         """
         # Fetch existing local subscription (may be FREE/trialing)
-        result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
+        result = await db.execute(
+            select(Subscription).where(Subscription.user_id == user.id)
+        )
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -198,8 +204,14 @@ class PaymentService:
 
         try:
             # Get latest non-canceled subscription for this customer
-            stripe_subs = stripe.Subscription.list(customer=customer_id, status="all", limit=10)
-            items = stripe_subs.get("data", []) if isinstance(stripe_subs, dict) else stripe_subs.data
+            stripe_subs = stripe.Subscription.list(
+                customer=customer_id, status="all", limit=10
+            )
+            items = (
+                stripe_subs.get("data", [])
+                if isinstance(stripe_subs, dict)
+                else stripe_subs.data
+            )
             candidates = [s for s in items if s.get("status") != "canceled"]
             if not candidates:
                 return subscription
@@ -302,7 +314,7 @@ class PaymentService:
             logger.error(f"Failed to create free subscription: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to create subscription: {str(e)}"
+                detail=f"Failed to create subscription: {str(e)}",
             )
 
     @staticmethod
@@ -318,13 +330,13 @@ class PaymentService:
             if not subscription:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="No subscription found"
+                    detail="No subscription found",
                 )
 
             if subscription.plan == SubscriptionPlan.FREE.value:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot cancel free plan"
+                    detail="Cannot cancel free plan",
                 )
 
             # Cancel in Stripe
@@ -335,8 +347,7 @@ class PaymentService:
                     subscription.canceled_at = datetime.utcnow()
                 else:
                     stripe.Subscription.modify(
-                        subscription.stripe_subscription_id,
-                        cancel_at_period_end=True
+                        subscription.stripe_subscription_id, cancel_at_period_end=True
                     )
                     subscription.cancel_at_period_end = True
 
@@ -350,7 +361,7 @@ class PaymentService:
             logger.error(f"Failed to cancel subscription: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to cancel subscription: {str(e)}"
+                detail=f"Failed to cancel subscription: {str(e)}",
             )
 
     @staticmethod
@@ -381,7 +392,9 @@ class PaymentService:
             raise
 
     @staticmethod
-    async def _handle_checkout_completed(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_checkout_completed(
+        data: Dict[str, Any], db: AsyncSession
+    ) -> None:
         """Handle checkout.session.completed event"""
         session = data.get("object", {})
         customer_id = session.get("customer")
@@ -395,7 +408,9 @@ class PaymentService:
         logger.info(f"Checkout completed for user {user_id}")
 
     @staticmethod
-    async def _handle_subscription_created(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_subscription_created(
+        data: Dict[str, Any], db: AsyncSession
+    ) -> None:
         """Handle customer.subscription.created event"""
         stripe_subscription = data.get("object", {})
         customer_id = stripe_subscription.get("customer")
@@ -482,14 +497,18 @@ class PaymentService:
         logger.info(f"Subscription created/updated for user {user_id}")
 
     @staticmethod
-    async def _handle_subscription_updated(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_subscription_updated(
+        data: Dict[str, Any], db: AsyncSession
+    ) -> None:
         """Handle customer.subscription.updated event"""
         stripe_subscription = data.get("object", {})
         subscription_id = stripe_subscription.get("id")
 
         # Find subscription
         result = await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == subscription_id)
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == subscription_id
+            )
         )
         subscription = result.scalar_one_or_none()
 
@@ -505,7 +524,9 @@ class PaymentService:
         subscription.current_period_end = datetime.fromtimestamp(
             stripe_subscription.get("current_period_end")
         )
-        subscription.cancel_at_period_end = stripe_subscription.get("cancel_at_period_end", False)
+        subscription.cancel_at_period_end = stripe_subscription.get(
+            "cancel_at_period_end", False
+        )
 
         if stripe_subscription.get("canceled_at"):
             subscription.canceled_at = datetime.fromtimestamp(
@@ -522,14 +543,18 @@ class PaymentService:
         logger.info(f"Subscription {subscription_id} updated")
 
     @staticmethod
-    async def _handle_subscription_deleted(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_subscription_deleted(
+        data: Dict[str, Any], db: AsyncSession
+    ) -> None:
         """Handle customer.subscription.deleted event"""
         stripe_subscription = data.get("object", {})
         subscription_id = stripe_subscription.get("id")
 
         # Find subscription
         result = await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == subscription_id)
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == subscription_id
+            )
         )
         subscription = result.scalar_one_or_none()
 
@@ -557,7 +582,9 @@ class PaymentService:
 
         # Find subscription
         result = await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == subscription_id)
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == subscription_id
+            )
         )
         subscription = result.scalar_one_or_none()
 
@@ -595,7 +622,9 @@ class PaymentService:
 
         # Find subscription
         result = await db.execute(
-            select(Subscription).where(Subscription.stripe_subscription_id == subscription_id)
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == subscription_id
+            )
         )
         subscription = result.scalar_one_or_none()
 
@@ -649,24 +678,26 @@ class PaymentService:
             analytics_enabled=False,
         )
 
-        plans.append(PlanInfo(
-            name="Basic",
-            plan_type=SubscriptionPlan.FREE,
-            price=0.0,
-            currency="usd",
-            interval="14 days trial",
-            features=[
-                "14-day free trial",
-                "720p streaming quality",
-                "1 concurrent stream",
-                "1 hour stream duration",
-                "Email support (72h response)",
-            ],
-            limits=basic_limits,
-            stripe_price_id=settings.stripe_free_price_id,
-            stripe_product_id="",
-            is_popular=False,
-        ))
+        plans.append(
+            PlanInfo(
+                name="Basic",
+                plan_type=SubscriptionPlan.FREE,
+                price=0.0,
+                currency="usd",
+                interval="14 days trial",
+                features=[
+                    "14-day free trial",
+                    "720p streaming quality",
+                    "1 concurrent stream",
+                    "1 hour stream duration",
+                    "Email support (72h response)",
+                ],
+                limits=basic_limits,
+                stripe_price_id=settings.stripe_free_price_id,
+                stripe_product_id="",
+                is_popular=False,
+            )
+        )
 
         # Pro Plan
         pro_limits = PlanLimits(
@@ -680,24 +711,26 @@ class PaymentService:
             analytics_enabled=False,
         )
 
-        plans.append(PlanInfo(
-            name="Pro",
-            plan_type=SubscriptionPlan.PRO,
-            price=69.0,
-            currency="usd",
-            interval="month",
-            features=[
-                "Everything in Basic +",
-                "Up to 1080p streaming quality",
-                "Up to 10 concurrent streams",
-                "Unlimited stream duration",
-                "24h priority support (email & chat)",
-            ],
-            limits=pro_limits,
-            stripe_price_id=settings.stripe_pro_price_id,
-            stripe_product_id="",
-            is_popular=True,
-        ))
+        plans.append(
+            PlanInfo(
+                name="Pro",
+                plan_type=SubscriptionPlan.PRO,
+                price=69.0,
+                currency="usd",
+                interval="month",
+                features=[
+                    "Everything in Basic +",
+                    "Up to 1080p streaming quality",
+                    "Up to 10 concurrent streams",
+                    "Unlimited stream duration",
+                    "24h priority support (email & chat)",
+                ],
+                limits=pro_limits,
+                stripe_price_id=settings.stripe_pro_price_id,
+                stripe_product_id="",
+                is_popular=True,
+            )
+        )
 
         # Enterprise Plan
         enterprise_limits = PlanLimits(
@@ -711,26 +744,28 @@ class PaymentService:
             analytics_enabled=True,
         )
 
-        plans.append(PlanInfo(
-            name="Enterprise",
-            plan_type=SubscriptionPlan.ENTERPRISE,
-            price=0.0,  # Custom pricing
-            currency="usd",
-            interval="month",
-            features=[
-                "Everything in Pro +",
-                "Up to 4K streaming quality",
-                "Unlimited concurrent streams",
-                "24/7 dedicated support",
-                "Chat content filter",
-                "OAuth integration",
-                "Advanced analytics",
-                "Custom pricing",
-            ],
-            limits=enterprise_limits,
-            stripe_price_id=settings.stripe_enterprise_price_id,
-            stripe_product_id="",
-            is_popular=False,
-        ))
+        plans.append(
+            PlanInfo(
+                name="Enterprise",
+                plan_type=SubscriptionPlan.ENTERPRISE,
+                price=0.0,  # Custom pricing
+                currency="usd",
+                interval="month",
+                features=[
+                    "Everything in Pro +",
+                    "Up to 4K streaming quality",
+                    "Unlimited concurrent streams",
+                    "24/7 dedicated support",
+                    "Chat content filter",
+                    "OAuth integration",
+                    "Advanced analytics",
+                    "Custom pricing",
+                ],
+                limits=enterprise_limits,
+                stripe_price_id=settings.stripe_enterprise_price_id,
+                stripe_product_id="",
+                is_popular=False,
+            )
+        )
 
         return plans

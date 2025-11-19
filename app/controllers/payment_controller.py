@@ -3,6 +3,7 @@ Payment Controller
 Handles all payment-related API endpoints including subscription management,
 checkout, webhooks, and plan information.
 """
+
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -36,8 +37,7 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
 async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db)
+    request: Request, db: AsyncSession = Depends(get_db)
 ) -> User:
     """Dependency to get current authenticated user.
 
@@ -108,7 +108,7 @@ async def create_checkout_session(
         logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create checkout session"
+            detail="Failed to create checkout session",
         )
 
 
@@ -134,7 +134,7 @@ async def create_customer_portal(
         logger.error(f"Error creating portal session: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create portal session"
+            detail="Failed to create portal session",
         )
 
 
@@ -154,17 +154,17 @@ async def get_subscription(
 
     # Best-effort reconcile with Stripe in case webhooks didn't update yet
     try:
-        subscription = await PaymentService.reconcile_subscription_from_stripe(user, db) or subscription
+        subscription = (
+            await PaymentService.reconcile_subscription_from_stripe(user, db)
+            or subscription
+        )
     except Exception as e:
         logger.warning(f"Subscription reconcile skipped: {str(e)}")
 
     # Add plan limits to response (computed from current plan)
     limits = subscription.get_plan_limits()
 
-    return SubscriptionWithLimits(
-        **subscription.__dict__,
-        limits=limits
-    )
+    return SubscriptionWithLimits(**subscription.__dict__, limits=limits)
 
 
 @router.post("/subscription/cancel", response_model=SubscriptionResponse)
@@ -189,7 +189,7 @@ async def cancel_subscription(
         logger.error(f"Error canceling subscription: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to cancel subscription"
+            detail="Failed to cancel subscription",
         )
 
 
@@ -205,7 +205,7 @@ async def get_plans():
         logger.error(f"Error fetching plans: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch plans"
+            detail="Failed to fetch plans",
         )
 
 
@@ -219,7 +219,7 @@ async def stripe_webhook(
     Handle Stripe webhook events
     """
     payload = await request.body()
-    
+
     try:
         # Verify webhook signature
         event = stripe.Webhook.construct_event(
@@ -231,7 +231,7 @@ async def stripe_webhook(
     except stripe.error.SignatureVerificationError as e:
         logger.error(f"Invalid webhook signature: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid signature")
-    
+
     # Handle the event
     try:
         await PaymentService.handle_webhook_event(
@@ -245,7 +245,7 @@ async def stripe_webhook(
         logger.error(f"Error processing webhook: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to process webhook"
+            detail="Failed to process webhook",
         )
 
 
@@ -259,10 +259,10 @@ async def get_transactions(
     """
     try:
         subscription = await PaymentService.get_user_subscription(user, db)
-        
+
         if not subscription:
             return []
-        
+
         # Transactions are loaded via relationship
         await db.refresh(subscription, ["transactions"])
         return subscription.transactions
@@ -270,7 +270,7 @@ async def get_transactions(
         logger.error(f"Error fetching transactions: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch transactions"
+            detail="Failed to fetch transactions",
         )
 
 
