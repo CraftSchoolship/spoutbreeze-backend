@@ -1,8 +1,9 @@
-import requests
 from requests import Timeout as RequestsTimeout
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any
+import requests
+import logging
 from app.models.bbb_schemas import (
     BroadcasterRequest,
     IsMeetingRunningRequest,
@@ -13,7 +14,10 @@ from app.models.bbb_schemas import (
 )
 from app.config.settings import get_settings
 from app.services.bbb_service import BBBService
-import asyncio
+from app.services.chat_context import set_user_mapping
+from app.services.chat_gateway_client import chat_gateway_client
+
+logger = logging.getLogger("BroadcasterService")
 
 
 class BroadcasterService:
@@ -31,11 +35,17 @@ class BroadcasterService:
         password: str,
         platform: str,
         bbb_service: BBBService,
+        user_id: str,
     ) -> Dict[str, Any]:
         """
         Create a broadcaster stream (blocking until broadcaster responds) and return its real stream_id.
         """
         try:
+            # 1. Write meeting_id → user_id to Redis FIRST
+            await set_user_mapping(meeting_id=meeting_id, user_id=user_id, ttl=86400)
+            logger.info(f"[Broadcaster] Mapped meeting {meeting_id} → user {user_id}")
+
+            # 2. Verify meeting is running
             bbb_service.is_meeting_running(
                 request=IsMeetingRunningRequest(meeting_id=meeting_id)
             )
@@ -44,6 +54,7 @@ class BroadcasterService:
                 request=GetMeetingInfoRequest(meeting_id=meeting_id, password=password)
             )
 
+            # 3. Join meeting as bot
             plugin_manifests = [PluginManifests(url=self.plugin_manifests_url)]
             join_request = JoinMeetingRequest(
                 meeting_id=meeting_id,
@@ -53,16 +64,12 @@ class BroadcasterService:
                 user_id="spoutbreeze_bot",
             )
             join_url = bbb_service.get_join_url(request=join_request)
-            health_url = bbb_service.get_is_meeting_running_url(meeting_id)
 
+            # 4. Start broadcaster pod
             broadcaster_payload = BroadcasterRequest(
-                audio_bitrate="128k",
-                video_bitrate="6800k",
                 close_popups=True,
-                fps=25,
-                listen_only=True,
-                resolution="1920x1080",
-                bbb_health_check_url=health_url,
+                is_basic_plan=True,
+                resolution="720p",
                 bbb_server_url=join_url,
                 stream=StreamConfig(
                     platform=platform,
@@ -96,6 +103,28 @@ class BroadcasterService:
                     status_code=502, detail="Broadcaster response missing stream_id"
                 )
 
+            logger.info(f"[Broadcaster] Started stream {stream_id}")
+
+            # 5. Connect to platform chat AFTER broadcaster starts
+            platform_lower = platform.lower()
+            if "twitch" in platform_lower:
+                try:
+                    await chat_gateway_client.connect_twitch(user_id)
+                    logger.info(
+                        f"[Broadcaster] Connected Twitch chat for user {user_id}"
+                    )
+                except Exception as e:
+                    logger.error(f"[Broadcaster] Failed to connect Twitch: {e}")
+                    # Don't fail the broadcast if chat connection fails
+            elif "youtube" in platform_lower:
+                try:
+                    await chat_gateway_client.connect_youtube(user_id)
+                    logger.info(
+                        f"[Broadcaster] Connected YouTube chat for user {user_id}"
+                    )
+                except Exception as e:
+                    logger.error(f"[Broadcaster] Failed to connect YouTube: {e}")
+
             return {
                 "status": data.get("status", "running"),
                 "message": "Broadcaster started successfully",
@@ -111,14 +140,14 @@ class BroadcasterService:
 
         except RequestsTimeout:
             raise HTTPException(
-                status_code=504,
-                detail=f"Broadcaster timeout after {self.timeout}s",
+                status_code=504, detail="Broadcaster API timed out (network issue)"
             )
         except HTTPException:
             raise
         except Exception as e:
+            logger.error(f"[Broadcaster] Start failed: {e}")
             raise HTTPException(
-                status_code=500, detail=f"Error starting broadcaster: {str(e)}"
+                status_code=500, detail=f"Broadcaster start failed: {str(e)}"
             )
 
     async def fetch_status(self, stream_id: str) -> Dict[str, Any]:
@@ -128,37 +157,15 @@ class BroadcasterService:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_get():
-            return requests.get(
-                url, headers={"Accept": "application/json"}, timeout=self.timeout
-            )
+            return requests.get(url, timeout=self.timeout)
 
         try:
-            resp = await run_in_threadpool(do_get)
-            if resp.status_code == 404:
-                raise HTTPException(status_code=404, detail="Stream not found")
-            if resp.status_code != 200:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Broadcaster status error ({resp.status_code}): {resp.text}",
-                )
-            data = resp.json()
-            return {
-                "stream_id": data.get("id") or stream_id,
-                "status": data.get("status"),
-                "pod_name": data.get("pod_name"),
-                "bbb_health_check_url": data.get("bbb_health_check_url"),
-                "bbb_server_url": data.get("bbb_server_url"),
-                "created_at": data.get("created_at"),
-                "streams": data.get("streams"),
-                "video_bitrate": data.get("video_bitrate"),
-                "audio_bitrate": data.get("audio_bitrate"),
-                "fps": data.get("fps"),
-                "resolution": data.get("resolution"),
-            }
+            response = await run_in_threadpool(do_get)
+            response.raise_for_status()
+            return response.json()
         except RequestsTimeout:
             raise HTTPException(
-                status_code=504,
-                detail=f"Broadcaster status timeout after {self.timeout}s",
+                status_code=504, detail="Broadcaster status check timed out"
             )
 
     async def stop_broadcast(self, stream_id: str) -> Dict[str, Any]:
@@ -168,50 +175,12 @@ class BroadcasterService:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_delete():
-            return requests.delete(
-                url, headers={"Accept": "application/json"}, timeout=self.timeout
-            )
+            return requests.delete(url, timeout=self.timeout)
 
-        max_attempts = 3
-        delay_seconds = 2
-
-        for attempt in range(1, max_attempts + 1):
-            try:
-                resp = await run_in_threadpool(do_delete)
-            except RequestsTimeout:
-                if attempt == max_attempts:
-                    raise HTTPException(
-                        status_code=504,
-                        detail=f"Broadcaster delete timeout after {self.timeout}s",
-                    )
-                await asyncio.sleep(delay_seconds)
-                continue
-
-            # Stream not yet registered -> retry
-            if resp.status_code == 404:
-                if attempt < max_attempts:
-                    await asyncio.sleep(delay_seconds)
-                    continue
-                raise HTTPException(status_code=404, detail="Stream not found")
-
-            if resp.status_code not in (200, 202, 204):
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Broadcaster delete error ({resp.status_code}): {resp.text}",
-                )
-
-            body = {}
-            try:
-                if resp.text:
-                    body = resp.json()
-            except Exception:
-                pass
-
-            return {
-                "message": body.get("message", "stream deleted successfully"),
-                "stream_id": stream_id,
-                "status": "stopped",
-            }
-
-        # Fallback (should not reach)
-        raise HTTPException(status_code=500, detail="Unexpected delete failure path")
+        try:
+            response = await run_in_threadpool(do_delete)
+            response.raise_for_status()
+            return {"message": "Stream stopped", "stream_id": stream_id}
+        except Exception as e:
+            logger.error(f"[Broadcaster] Stop failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Stop failed: {str(e)}")

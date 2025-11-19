@@ -4,14 +4,10 @@ from typing import Optional, List, Dict, Any
 
 # Payload sent to external broadcaster
 class BroadcasterRequest(BaseModel):
-    audio_bitrate: str = "128k"
-    video_bitrate: str = "6800k"
-    close_popups: bool = True
-    fps: int = 25
-    listen_only: bool = True
-    resolution: str = "1920x1080"
-    bbb_health_check_url: str
     bbb_server_url: str
+    close_popups: bool = True
+    is_basic_plan: bool = True
+    resolution: str = "1080p"
     stream: "StreamConfig"
 
 
