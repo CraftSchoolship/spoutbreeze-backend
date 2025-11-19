@@ -16,6 +16,7 @@ from app.models.bbb_schemas import (
 from app.controllers.user_controller import get_current_user
 from app.models.user_models import User
 from uuid import UUID
+from app.services.chat_context import set_user_mapping
 
 router = APIRouter(prefix="/api/bbb", tags=["BigBlueButton"])
 # bbb_service = BBBService()
@@ -38,6 +39,11 @@ async def create_meeting(
         request=request,
         user_id=UUID(str(current_user.id)),
         db=db,
+    )
+    await set_user_mapping(
+        meeting_id=result.get("internalMeetingID"),
+        user_id=str(current_user.id),
+        ttl=86400,
     )
     return result
 
