@@ -16,6 +16,9 @@ from app.config.settings import get_settings
 from app.services.bbb_service import BBBService
 from app.services.chat_context import set_user_mapping
 from app.services.chat_gateway_client import chat_gateway_client
+from app.services.payment_service import PaymentService
+from sqlalchemy import select
+from app.models.user_models import User
 
 logger = logging.getLogger("BroadcasterService")
 
@@ -36,16 +39,42 @@ class BroadcasterService:
         platform: str,
         bbb_service: BBBService,
         user_id: str,
+        db,
     ) -> Dict[str, Any]:
         """
         Create a broadcaster stream (blocking until broadcaster responds) and return its real stream_id.
         """
         try:
-            # 1. Write meeting_id → user_id to Redis FIRST
+            # 1. Fetch user and plan limits
+            result = await db.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            subscription = await PaymentService.get_user_subscription(user, db)
+            if not subscription:
+                subscription = await PaymentService.create_free_subscription(user, db)
+
+            limits = subscription.get_plan_limits()
+
+            # Map limits to broadcaster config
+            resolution = limits.get("max_quality", "720p")
+            max_duration = limits.get("max_stream_duration_hours")
+            is_basic_plan = (
+                max_duration == 1
+            )  # True if limited to 1 hour, False if None (unlimited)
+
+            logger.info(
+                f"[Broadcaster] User {user_id} plan: resolution={resolution}, "
+                f"is_basic_plan={is_basic_plan}, max_duration={max_duration}"
+            )
+
+            # 2. Write meeting_id → user_id to Redis FIRST
             await set_user_mapping(meeting_id=meeting_id, user_id=user_id, ttl=86400)
             logger.info(f"[Broadcaster] Mapped meeting {meeting_id} → user {user_id}")
 
-            # 2. Verify meeting is running
+            # 3. Verify meeting is running
             bbb_service.is_meeting_running(
                 request=IsMeetingRunningRequest(meeting_id=meeting_id)
             )
@@ -54,7 +83,7 @@ class BroadcasterService:
                 request=GetMeetingInfoRequest(meeting_id=meeting_id, password=password)
             )
 
-            # 3. Join meeting as bot
+            # 4. Join meeting as bot
             plugin_manifests = [PluginManifests(url=self.plugin_manifests_url)]
             join_request = JoinMeetingRequest(
                 meeting_id=meeting_id,
@@ -65,11 +94,11 @@ class BroadcasterService:
             )
             join_url = bbb_service.get_join_url(request=join_request)
 
-            # 4. Start broadcaster pod
+            # 5. Start broadcaster pod with dynamic config
             broadcaster_payload = BroadcasterRequest(
                 close_popups=True,
-                is_basic_plan=True,
-                resolution="720p",
+                is_basic_plan=is_basic_plan,
+                resolution=resolution,
                 bbb_server_url=join_url,
                 stream=StreamConfig(
                     platform=platform,
@@ -105,7 +134,7 @@ class BroadcasterService:
 
             logger.info(f"[Broadcaster] Started stream {stream_id}")
 
-            # 5. Connect to platform chat AFTER broadcaster starts
+            # 6. Connect to platform chat AFTER broadcaster starts
             platform_lower = platform.lower()
             if "twitch" in platform_lower:
                 try:

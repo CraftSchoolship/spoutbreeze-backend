@@ -45,7 +45,8 @@ async def start_broadcaster(
         password=payload.password,
         platform=payload.platform,
         bbb_service=bbb_service,
-        user_id=user_id,  # Pass user_id from database
+        user_id=user_id,
+        db=db,
     )
 
 
