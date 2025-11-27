@@ -9,6 +9,7 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore
 import time
 
 from app.services.bbb_service import BBBService
+from app.services.stream_cleanup_service import StreamCleanupService
 
 # Import models to ensure they are registered with SQLAlchemy
 from app.models import user_models, payment_models, youtube_models  # noqa: F401
@@ -28,7 +29,7 @@ from app.controllers.payment_controller import router as payment_router
 from app.controllers.internal_controller import router as internal_router
 
 from app.config.chat_manager import chat_manager
-from app.config.twitch_irc import TwitchIRCClient
+# from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.config.redis_config import cache
@@ -37,7 +38,7 @@ logger = get_logger("Main")
 setting = get_settings()
 scheduler = AsyncIOScheduler()
 bbb_service = BBBService()
-twitch_client = TwitchIRCClient()
+# twitch_client = TwitchIRCClient()
 
 
 # Add request logging middleware
@@ -79,11 +80,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connected")
 
     # Startup: schedule the IRC client
-    twitch_tasks = asyncio.gather(
-        twitch_client.connect(),
-        # twitch_client.start_token_refresh_scheduler(),
-        return_exceptions=True,
-    )
+    # twitch_tasks = asyncio.gather(
+    #     twitch_client.connect(),
+    #     # twitch_client.start_token_refresh_scheduler(),
+    #     return_exceptions=True,
+    # )
 
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
@@ -255,22 +256,39 @@ app.include_router(bbb_router)
 app.include_router(payment_router)
 
 
-@app.websocket("/ws/chat/")
-async def chat_endpoint(websocket: WebSocket):
-    """
-    WebSocket endpoint for chat messages
-    """
-    logger.info("WebSocket connection requested")
-    await chat_manager.connect(websocket)
-    try:
-        while True:
-            data = await websocket.receive_text()
-            if data.startswith("/twitch"):
-                message = data[len("/twitch ") :]
-                await twitch_client.send_message(message)
-                logger.info(f"[TwitchIRC] Sending message: {message}")
-            else:
-                await chat_manager.broadcast(data)
-    except WebSocketDisconnect:
-        chat_manager.disconnect(websocket)
-        logger.info("[Chat] Client disconnected")
+# @app.websocket("/ws/chat/")
+# async def chat_endpoint(websocket: WebSocket):
+#     """
+#     WebSocket endpoint for chat messages
+#     """
+#     logger.info("WebSocket connection requested")
+#     await chat_manager.connect(websocket)
+#     try:
+#         while True:
+#             data = await websocket.receive_text()
+#             if data.startswith("/twitch"):
+#                 message = data[len("/twitch ") :]
+#                 await twitch_client.send_message(message)
+#                 logger.info(f"[TwitchIRC] Sending message: {message}")
+#             else:
+#                 await chat_manager.broadcast(data)
+#     except WebSocketDisconnect:
+#         chat_manager.disconnect(websocket)
+#         logger.info("[Chat] Client disconnected")
+
+
+from app.services.stream_cleanup_service import StreamCleanupService
+import asyncio
+
+async def periodic_stream_cleanup():
+    while True:
+        try:
+            async with get_db_session() as db:
+                await StreamCleanupService.cleanup_stale_streams(db)
+        except Exception as e:
+            logger.error(f"Periodic cleanup error: {e}")
+        await asyncio.sleep(300)  # Run every 5 minutes
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(periodic_stream_cleanup())

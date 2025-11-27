@@ -27,7 +27,6 @@ async def start_broadcaster(
     payload: BroadcasterRobot = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
-    # Look up user_id from meeting_id in database
     result = await db.execute(
         select(BbbMeeting).where(BbbMeeting.meeting_id == payload.meeting_id)
     )

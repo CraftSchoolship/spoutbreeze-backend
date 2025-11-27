@@ -117,7 +117,7 @@ async def get_token_status(
         return {
             "user_id": str(current_user.id),
             "has_token": True,
-            "token_preview": token_record.access_token[:20] + "...",
+            "token_preview": token_record.access_token,
             "expires_at": token_record.expires_at.isoformat(),
             "is_expired": token_record.expires_at <= current_time,
             "has_refresh_token": bool(token_record.refresh_token),

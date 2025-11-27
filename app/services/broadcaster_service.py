@@ -4,6 +4,7 @@ from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any
 import requests
 import logging
+from collections import defaultdict
 from app.models.bbb_schemas import (
     BroadcasterRequest,
     IsMeetingRunningRequest,
@@ -14,13 +15,16 @@ from app.models.bbb_schemas import (
 )
 from app.config.settings import get_settings
 from app.services.bbb_service import BBBService
-from app.services.chat_context import set_user_mapping
 from app.services.chat_gateway_client import chat_gateway_client
 from app.services.payment_service import PaymentService
 from sqlalchemy import select
 from app.models.user_models import User
 
 logger = logging.getLogger("BroadcasterService")
+
+# Simple in-memory counters (NOT persistent, single-process only)
+_user_streams: dict[str, set[str]] = defaultdict(set)
+_stream_to_user: dict[str, str] = {}
 
 
 class BroadcasterService:
@@ -41,14 +45,9 @@ class BroadcasterService:
         user_id: str,
         db,
     ) -> Dict[str, Any]:
-        """
-        Create a broadcaster stream (blocking until broadcaster responds) and return its real stream_id.
-        """
         try:
-            # 1. Fetch user and plan limits
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
-
             if not user:
                 raise HTTPException(status_code=404, detail="User not found")
 
@@ -57,33 +56,34 @@ class BroadcasterService:
                 subscription = await PaymentService.create_free_subscription(user, db)
 
             limits = subscription.get_plan_limits()
-
-            # Map limits to broadcaster config
             resolution = limits.get("max_quality", "720p")
             max_duration = limits.get("max_stream_duration_hours")
-            is_basic_plan = (
-                max_duration == 1
-            )  # True if limited to 1 hour, False if None (unlimited)
+            max_concurrent_streams = limits.get("max_concurrent_streams")
+            is_basic_plan = max_duration == 1
 
-            logger.info(
-                f"[Broadcaster] User {user_id} plan: resolution={resolution}, "
-                f"is_basic_plan={is_basic_plan}, max_duration={max_duration}"
-            )
+            # Concurrent stream check via in-memory counter
+            active_stream_count = len(_user_streams[user_id])
+            if (
+                max_concurrent_streams is not None
+                and active_stream_count >= max_concurrent_streams
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Concurrent stream limit reached. Your plan allows "
+                        f"{max_concurrent_streams} concurrent stream(s). "
+                        f"Please upgrade your plan or stop an existing stream."
+                    ),
+                )
 
-            # 2. Write meeting_id → user_id to Redis FIRST
-            await set_user_mapping(meeting_id=meeting_id, user_id=user_id, ttl=86400)
-            logger.info(f"[Broadcaster] Mapped meeting {meeting_id} → user {user_id}")
-
-            # 3. Verify meeting is running
+            # Meeting running check
             bbb_service.is_meeting_running(
                 request=IsMeetingRunningRequest(meeting_id=meeting_id)
             )
-
             meeting_info = bbb_service.get_meeting_info(
                 request=GetMeetingInfoRequest(meeting_id=meeting_id, password=password)
             )
 
-            # 4. Join meeting as bot
             plugin_manifests = [PluginManifests(url=self.plugin_manifests_url)]
             join_request = JoinMeetingRequest(
                 meeting_id=meeting_id,
@@ -94,7 +94,6 @@ class BroadcasterService:
             )
             join_url = bbb_service.get_join_url(request=join_request)
 
-            # 5. Start broadcaster pod with dynamic config
             broadcaster_payload = BroadcasterRequest(
                 close_popups=True,
                 is_basic_plan=is_basic_plan,
@@ -132,27 +131,21 @@ class BroadcasterService:
                     status_code=502, detail="Broadcaster response missing stream_id"
                 )
 
-            logger.info(f"[Broadcaster] Started stream {stream_id}")
+            # Track stream in memory
+            _user_streams[user_id].add(stream_id)
+            _stream_to_user[stream_id] = user_id
 
-            # 6. Connect to platform chat AFTER broadcaster starts
             platform_lower = platform.lower()
             if "twitch" in platform_lower:
                 try:
                     await chat_gateway_client.connect_twitch(user_id)
-                    logger.info(
-                        f"[Broadcaster] Connected Twitch chat for user {user_id}"
-                    )
                 except Exception as e:
-                    logger.error(f"[Broadcaster] Failed to connect Twitch: {e}")
-                    # Don't fail the broadcast if chat connection fails
+                    logger.error(f"Twitch connect failed: {e}")
             elif "youtube" in platform_lower:
                 try:
                     await chat_gateway_client.connect_youtube(user_id)
-                    logger.info(
-                        f"[Broadcaster] Connected YouTube chat for user {user_id}"
-                    )
                 except Exception as e:
-                    logger.error(f"[Broadcaster] Failed to connect YouTube: {e}")
+                    logger.error(f"YouTube connect failed: {e}")
 
             return {
                 "status": data.get("status", "running"),
@@ -174,15 +167,12 @@ class BroadcasterService:
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"[Broadcaster] Start failed: {e}")
+            logger.error(f"Start failed: {e}")
             raise HTTPException(
                 status_code=500, detail=f"Broadcaster start failed: {str(e)}"
             )
 
     async def fetch_status(self, stream_id: str) -> Dict[str, Any]:
-        """
-        Proxy GET /streams/{id} and normalize response keys.
-        """
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_get():
@@ -198,9 +188,6 @@ class BroadcasterService:
             )
 
     async def stop_broadcast(self, stream_id: str) -> Dict[str, Any]:
-        """
-        DELETE /streams/{id} at broadcaster with transient 404 retry (stream may not be ready instantly).
-        """
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_delete():
@@ -209,7 +196,15 @@ class BroadcasterService:
         try:
             response = await run_in_threadpool(do_delete)
             response.raise_for_status()
-            return {"message": "Stream stopped", "stream_id": stream_id}
         except Exception as e:
-            logger.error(f"[Broadcaster] Stop failed: {e}")
+            logger.error(f"Stop failed: {e}")
             raise HTTPException(status_code=500, detail=f"Stop failed: {str(e)}")
+
+        # In-memory cleanup
+        user_id = _stream_to_user.pop(stream_id, None)
+        if user_id and stream_id in _user_streams[user_id]:
+            _user_streams[user_id].remove(stream_id)
+            if not _user_streams[user_id]:
+                del _user_streams[user_id]
+
+        return {"message": "Stream stopped", "stream_id": stream_id}
