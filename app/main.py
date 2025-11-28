@@ -39,6 +39,7 @@ setting = get_settings()
 scheduler = AsyncIOScheduler()
 bbb_service = BBBService()
 # twitch_client = TwitchIRCClient()
+# twitch_client = TwitchIRCClient()
 
 
 # Add request logging middleware
