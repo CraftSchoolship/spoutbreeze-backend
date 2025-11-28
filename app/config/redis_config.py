@@ -1,7 +1,7 @@
 from __future__ import annotations
 import pickle
 import hashlib
-from typing import Optional, Callable, Any, TypeVar, ParamSpec, cast, Coroutine
+from typing import Optional, Callable, Any, TypeVar, ParamSpec, cast, Coroutine, Set
 from functools import wraps
 
 import redis.asyncio as redis
@@ -97,6 +97,59 @@ class RedisCache:
             ping_result = await self.redis_client.ping()  # type: ignore[misc]
             return True
         except Exception:
+            return False
+
+    # Redis Set operations
+    async def sadd(self, key: str, *values: str) -> int:
+        """Add members to a set"""
+        if not self.redis_client:
+            return 0
+        try:
+            return await self.redis_client.sadd(key, *values)
+        except Exception as e:
+            logger.error(f"SADD {key} error: {e}")
+            return 0
+
+    async def srem(self, key: str, *values: str) -> int:
+        """Remove members from a set"""
+        if not self.redis_client:
+            return 0
+        try:
+            return await self.redis_client.srem(key, *values)
+        except Exception as e:
+            logger.error(f"SREM {key} error: {e}")
+            return 0
+
+    async def smembers(self, key: str) -> Set[str]:
+        """Get all members of a set"""
+        if not self.redis_client:
+            return set()
+        try:
+            members = await self.redis_client.smembers(key)
+            # Decode bytes to strings if needed
+            return {m.decode() if isinstance(m, bytes) else m for m in members}
+        except Exception as e:
+            logger.error(f"SMEMBERS {key} error: {e}")
+            return set()
+
+    async def scard(self, key: str) -> int:
+        """Get the number of members in a set"""
+        if not self.redis_client:
+            return 0
+        try:
+            return await self.redis_client.scard(key)
+        except Exception as e:
+            logger.error(f"SCARD {key} error: {e}")
+            return 0
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        """Set expiry on a key"""
+        if not self.redis_client:
+            return False
+        try:
+            return await self.redis_client.expire(key, ttl)
+        except Exception as e:
+            logger.error(f"EXPIRE {key} error: {e}")
             return False
 
 

@@ -9,6 +9,11 @@ from apscheduler.triggers.cron import CronTrigger  # type: ignore
 import time
 
 from app.services.bbb_service import BBBService
+from app.services.stream_cleanup_service import StreamCleanupService
+
+# Import models to ensure they are registered with SQLAlchemy
+from app.models import user_models, payment_models, youtube_models  # noqa: F401
+from app.models.twitch import twitch_models  # noqa: F401
 
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router
@@ -20,6 +25,8 @@ from app.controllers.event_controller import router as event_router
 from app.controllers.health_controller import router as health_router
 from app.controllers.twitch_controller import router as twitch_router
 from app.controllers.youtube_controller import router as youtube_router
+from app.controllers.payment_controller import router as payment_router
+from app.controllers.internal_controller import router as internal_router
 
 from app.config.chat_manager import chat_manager
 
@@ -27,6 +34,7 @@ from app.config.chat_manager import chat_manager
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.config.redis_config import cache
+from app.config.database import get_db_session
 
 logger = get_logger("Main")
 setting = get_settings()
@@ -74,11 +82,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connected")
 
     # Startup: schedule the IRC client
-    twitch_tasks = asyncio.gather(
-        # twitch_client.connect(),
-        # twitch_client.start_token_refresh_scheduler(),
-        return_exceptions=True,
-    )
+    # twitch_tasks = asyncio.gather(
+    #     twitch_client.connect(),
+    #     # twitch_client.start_token_refresh_scheduler(),
+    #     return_exceptions=True,
+    # )
 
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
@@ -104,11 +112,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connection closed")
 
     # Shutdown: cancel the IRC task
-    twitch_tasks.cancel()
-    try:
-        await twitch_tasks
-    except asyncio.CancelledError:
-        logger.info("[TwitchIRC] Connect task cancelled cleanly")
+    # twitch_tasks.cancel()
+    # try:
+    #     await twitch_tasks
+    # except asyncio.CancelledError:
+    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
 
     logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
@@ -173,7 +181,7 @@ origins = [
     "https://67.222.155.30:8443",  # Keycloak URL
     "https://backend.67.222.155.30.nip.io:30444",  # Backend URL
     "https://backend.67.222.155.30.nip.io",  # Backend URL without port
-    "http://localhost:8800",  # Chat Gateway self
+    "http://localhost:8081",  # Chat Gateway self
 ]
 
 # Configure CORS
@@ -235,7 +243,8 @@ async def test_endpoint():
     }
 
 
-# Include routers
+# Register routers
+app.include_router(internal_router)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(twitch_router, prefix="/api")
@@ -246,6 +255,7 @@ app.include_router(event_router)
 app.include_router(stream_router)
 app.include_router(broadcaster_router)
 app.include_router(bbb_router)
+app.include_router(payment_router)
 
 
 # @app.websocket("/ws/chat/")
@@ -267,3 +277,22 @@ app.include_router(bbb_router)
 #     except WebSocketDisconnect:
 #         chat_manager.disconnect(websocket)
 #         logger.info("[Chat] Client disconnected")
+
+
+from app.services.stream_cleanup_service import StreamCleanupService
+import asyncio
+
+
+async def periodic_stream_cleanup():
+    while True:
+        try:
+            async with get_db_session() as db:
+                await StreamCleanupService.cleanup_stale_streams(db)
+        except Exception as e:
+            logger.error(f"Periodic cleanup error: {e}")
+        await asyncio.sleep(300)  # Run every 5 minutes
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(periodic_stream_cleanup())
