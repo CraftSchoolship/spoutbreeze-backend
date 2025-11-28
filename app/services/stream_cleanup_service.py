@@ -11,7 +11,7 @@ logger = logging.getLogger("StreamCleanupService")
 
 class StreamCleanupService:
     """Background service to clean up stale stream entries in Redis"""
-    
+
     @staticmethod
     async def cleanup_stale_streams(db: AsyncSession):
         """
@@ -20,15 +20,15 @@ class StreamCleanupService:
         """
         try:
             broadcaster_service = BroadcasterService()
-            
+
             # Get all users
             result = await db.execute(select(User))
             users = result.scalars().all()
-            
+
             for user in users:
                 user_id = str(user.id)
                 stream_ids = await get_user_streams(user_id)
-                
+
                 for stream_id in stream_ids:
                     try:
                         # Check if stream still exists
@@ -36,8 +36,10 @@ class StreamCleanupService:
                     except Exception:
                         # Stream doesn't exist or failed, remove from Redis
                         await remove_user_stream(stream_id)
-                        logger.info(f"Cleaned up stale stream {stream_id} for user {user_id}")
-            
+                        logger.info(
+                            f"Cleaned up stale stream {stream_id} for user {user_id}"
+                        )
+
             logger.info("Stream cleanup completed")
         except Exception as e:
             logger.error(f"Stream cleanup error: {e}")
