@@ -29,16 +29,17 @@ from app.controllers.payment_controller import router as payment_router
 from app.controllers.internal_controller import router as internal_router
 
 from app.config.chat_manager import chat_manager
+
 # from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.config.redis_config import cache
+from app.config.database import get_db_session
 
 logger = get_logger("Main")
 setting = get_settings()
 scheduler = AsyncIOScheduler()
 bbb_service = BBBService()
-# twitch_client = TwitchIRCClient()
 # twitch_client = TwitchIRCClient()
 
 
@@ -111,11 +112,11 @@ async def lifespan(app: FastAPI):
     logger.info("[cache] Redis cache connection closed")
 
     # Shutdown: cancel the IRC task
-    twitch_tasks.cancel()
-    try:
-        await twitch_tasks
-    except asyncio.CancelledError:
-        logger.info("[TwitchIRC] Connect task cancelled cleanly")
+    # twitch_tasks.cancel()
+    # try:
+    #     await twitch_tasks
+    # except asyncio.CancelledError:
+    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
 
     logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
@@ -281,6 +282,7 @@ app.include_router(payment_router)
 from app.services.stream_cleanup_service import StreamCleanupService
 import asyncio
 
+
 async def periodic_stream_cleanup():
     while True:
         try:
@@ -289,6 +291,7 @@ async def periodic_stream_cleanup():
         except Exception as e:
             logger.error(f"Periodic cleanup error: {e}")
         await asyncio.sleep(300)  # Run every 5 minutes
+
 
 @app.on_event("startup")
 async def startup_event():
