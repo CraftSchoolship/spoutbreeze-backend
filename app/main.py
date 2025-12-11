@@ -168,19 +168,9 @@ async def custom_swagger_ui_html():
     )
 
 
+# Parse CORS origins from settings (comma-separated string)
 origins = [
-    "http://localhost:3000",  # Frontend URL in development
-    "http://127.0.0.1:3000",  # Alternative localhost
-    "http://localhost:8000",  # Backend self
-    "http://127.0.0.1:8000",  # Backend self alternative
-    "http://spoutbreeze-frontend.spoutbreeze.svc.cluster.local:3000",  # Frontend URL in Kubernetes
-    "https://frontend.67.222.155.30.nip.io:30443",  # Frontend URL
-    "https://frontend.67.222.155.30.nip.io",  # Frontend URL without port
-    "https://test.b3.craftschoolship.com",  # BBB URL
-    "https://67.222.155.30:8443",  # Keycloak URL
-    "https://backend.67.222.155.30.nip.io:30444",  # Backend URL
-    "https://backend.67.222.155.30.nip.io",  # Backend URL without port
-    "http://localhost:8081",  # Chat Gateway self
+    origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()
 ]
 
 # Configure CORS
@@ -276,8 +266,6 @@ app.include_router(payment_router)
 #     except WebSocketDisconnect:
 #         chat_manager.disconnect(websocket)
 #         logger.info("[Chat] Client disconnected")
-
-
 
 
 async def periodic_stream_cleanup():

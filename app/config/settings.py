@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     stripe_pro_price_id: str = ""  # Will be configured from Stripe dashboard
     stripe_enterprise_price_id: str = ""  # Will be configured from Stripe dashboard
 
+    # CORS settings - comma-separated list of allowed origins
+    cors_origins: str
+
     model_config = {"env_file": ".env"}
 
 
