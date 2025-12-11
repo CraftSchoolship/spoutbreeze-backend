@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 from enum import Enum
 
-from sqlalchemy import String, DateTime, Boolean, Integer, Float, Text
+from sqlalchemy import String, DateTime, Boolean, Float, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import ForeignKey

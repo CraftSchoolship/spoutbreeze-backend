@@ -5,7 +5,6 @@ Enforces subscription plan limits and restrictions
 
 from fastapi import HTTPException, status, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional
 from datetime import datetime
 
 from app.config.database.session import get_db

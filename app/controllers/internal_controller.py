@@ -16,7 +16,7 @@ SHARED_SECRET = os.getenv("CHAT_GATEWAY_SHARED_SECRET", "dev-secret")
 
 def verify_internal_auth(x_internal_auth: str = Header(None, alias="X-Internal-Auth")):
     if x_internal_auth != SHARED_SECRET:
-        logger.warning(f"[Internal] Unauthorized access attempt")
+        logger.warning("[Internal] Unauthorized access attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

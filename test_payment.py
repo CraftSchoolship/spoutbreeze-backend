@@ -3,7 +3,6 @@ Test script to diagnose payment endpoint issues
 """
 
 import asyncio
-import sys
 from app.config.database.session import SessionLocal
 from app.services.payment_service import PaymentService
 from app.models.user_models import User

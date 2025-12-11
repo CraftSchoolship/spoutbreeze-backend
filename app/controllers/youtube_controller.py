@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, select
+from sqlalchemy import update
 from app.config.database.session import get_db
 from app.config.youtube_auth import YouTubeAuth
 from app.models.youtube_models import YouTubeToken

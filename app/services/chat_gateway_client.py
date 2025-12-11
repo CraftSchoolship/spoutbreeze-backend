@@ -64,7 +64,7 @@ class ChatGatewayClient:
         except httpx.ConnectError as e:
             logger.error(f"[Gateway] ❌ Connection failed: {e}")
             logger.error(f"[Gateway] URL attempted: {url}")
-            logger.error(f"[Gateway] Is the gateway running? Can the backend reach it?")
+            logger.error("[Gateway] Is the gateway running? Can the backend reach it?")
             raise
         except httpx.TimeoutException as e:
             logger.error(f"[Gateway] ❌ Request timed out: {e}")
