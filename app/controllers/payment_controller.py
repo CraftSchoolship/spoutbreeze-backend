@@ -25,9 +25,7 @@ from app.models.payment_schemas import (
     TransactionResponse,
     PlanInfo,
     CancelSubscriptionRequest,
-    UpdateSubscriptionRequest,
 )
-from app.models.payment_models import Subscription
 from app.services.cached.user_service_cached import user_service_cached
 
 logger = get_logger("PaymentController")

@@ -3,8 +3,6 @@ from typing import Optional
 from datetime import datetime
 from app.models.payment_models import (
     SubscriptionPlan,
-    SubscriptionStatus,
-    TransactionType,
 )
 
 

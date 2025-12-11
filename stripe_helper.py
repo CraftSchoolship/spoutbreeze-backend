@@ -35,7 +35,7 @@ try:
             prices = stripe.Price.list(product=product.id, active=True)
 
             if prices.data:
-                print(f"   💰 Prices:")
+                print("   💰 Prices:")
                 for price in prices.data:
                     amount = price.unit_amount / 100 if price.unit_amount else 0
                     currency = price.currency.upper()
@@ -66,8 +66,8 @@ try:
 
                     print()
             else:
-                print(f"   ⚠️  No prices found for this product!")
-                print(f"      Please create a price in Stripe Dashboard")
+                print("   ⚠️  No prices found for this product!")
+                print("      Please create a price in Stripe Dashboard")
 
             print("-" * 80)
             print()

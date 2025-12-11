@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
@@ -28,13 +28,12 @@ from app.controllers.youtube_controller import router as youtube_router
 from app.controllers.payment_controller import router as payment_router
 from app.controllers.internal_controller import router as internal_router
 
-from app.config.chat_manager import chat_manager
 
 # from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.config.redis_config import cache
-from app.config.database import get_db_session
+from app.config.database.session import SessionLocal
 
 logger = get_logger("Main")
 setting = get_settings()
@@ -279,14 +278,12 @@ app.include_router(payment_router)
 #         logger.info("[Chat] Client disconnected")
 
 
-from app.services.stream_cleanup_service import StreamCleanupService
-import asyncio
 
 
 async def periodic_stream_cleanup():
     while True:
         try:
-            async with get_db_session() as db:
+            async with SessionLocal() as db:
                 await StreamCleanupService.cleanup_stale_streams(db)
         except Exception as e:
             logger.error(f"Periodic cleanup error: {e}")
