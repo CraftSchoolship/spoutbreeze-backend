@@ -85,6 +85,8 @@ class Settings(BaseSettings):
 
     # CORS settings - comma-separated list of allowed origins
     cors_origins: str
+    # CORS regex pattern for dynamic origins (e.g., BBB instances)
+    cors_origin_regex: str = ""  # Optional regex pattern
 
     model_config = {"env_file": ".env"}
 

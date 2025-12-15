@@ -173,41 +173,16 @@ origins = [
     origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()
 ]
 
-# Configure CORS
+# Configure CORS with both explicit origins and regex pattern support
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins,  # Explicit origins (frontend, API, etc.)
+    allow_origin_regex=setting.cors_origin_regex
+    if setting.cors_origin_regex
+    else None,  # Regex for dynamic origins (BBB instances)
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Accept",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-        # WebSocket specific headers
-        "Upgrade",
-        "Connection",
-        "Sec-WebSocket-Key",
-        "Sec-WebSocket-Protocol",
-        "Sec-WebSocket-Version",
-        # Any custom headers your app uses
-        "Accept-Language",
-        "Cache-Control",
-        "Content-Language",
-        "DNT",
-        "If-Modified-Since",
-        "Keep-Alive",
-        "Pragma",
-        "Referer",
-        "User-Agent",
-        "X-CSRFToken",
-        "X-Forwarded-For",
-        "X-Forwarded-Proto",
-        "ngrok-skip-browser-warning",
-    ],
+    allow_headers=["*"],  # Allow all headers for flexibility
 )
 
 
