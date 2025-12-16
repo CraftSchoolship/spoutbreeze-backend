@@ -58,6 +58,9 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
     # Determine cookie settings based on environment
     is_production = settings.env == "production"
     cookie_domain = settings.domain if is_production else None
+    samesite_setting = (
+        "none" if is_production else "lax"
+    )  # "none" required for cross-domain in production
 
     # Set access token cookie
     response.set_cookie(
@@ -66,7 +69,7 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         expires=access_token_expires,
         httponly=True,
         secure=is_production,  # True in production, False in development
-        samesite="lax",  # Use "none" with secure=True for cross-domain in production
+        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
         path="/",
         domain=cookie_domain,
     )
@@ -78,7 +81,7 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         expires=refresh_token_expires,
         httponly=True,
         secure=is_production,  # True in production, False in development
-        samesite="lax",  # Use "none" with secure=True for cross-domain in production
+        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
         path="/",
         domain=cookie_domain,
     )
