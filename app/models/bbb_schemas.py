@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 class BroadcasterRequest(BaseModel):
     bbb_server_url: str
     close_popups: bool = True
+    fps: int = 16
     is_basic_plan: bool = True
     resolution: str = "1080p"
     stream: "StreamConfig"

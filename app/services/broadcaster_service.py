@@ -96,8 +96,11 @@ class BroadcasterService:
 
             broadcaster_payload = BroadcasterRequest(
                 close_popups=True,
-                is_basic_plan=is_basic_plan,
-                resolution=resolution,
+                # is_basic_plan=is_basic_plan,
+                is_basic_plan=False,
+                fps=16,
+                # resolution=resolution,
+                resolution="720p",
                 bbb_server_url=join_url,
                 stream=StreamConfig(
                     platform=platform,
