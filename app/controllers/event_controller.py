@@ -116,11 +116,11 @@ async def join_event(
 
         if join_result:
             # Set the meeting->user mapping for chat gateway
-            # Use the event creator's user_id so chat works
-            if event.meeting_id and event.user_id:
+            # Use the event creator's id so chat works
+            if event.meeting_id and event.creator_id:
                 await set_user_mapping(
                     meeting_id=event.meeting_id,
-                    user_id=str(event.user_id),
+                    user_id=str(event.creator_id),
                     ttl=86400,
                 )
             return join_result
