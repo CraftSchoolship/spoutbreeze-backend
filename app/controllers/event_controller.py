@@ -2,6 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict
 from uuid import UUID
+from sqlalchemy import select
+from app.models.event.event_models import Event
+from app.services.chat_context import set_user_mapping
 
 from app.config.database.session import get_db
 from app.controllers.user_controller import get_current_user
@@ -94,36 +97,40 @@ async def join_event(
     event_id: UUID,
     request: JoinEventRequest,
     db: AsyncSession = Depends(get_db),
-    # current_user: User = Depends(get_current_user),
 ) -> Dict[str, str]:
-    """
-    Get the join URL for an event by ID for the current user.
-    Args:
-        event_id: The ID of the event to join.
-        db: The database session.
-        current_user: The current user.
-    Returns:
-        A dictionary containing the join URL for the event.
-    """
+    """Get the join URL for an event by ID."""
     try:
+        # Get the event to find the creator/organizer
+
+        result = await db.execute(select(Event).where(Event.id == event_id))
+        event = result.scalars().first()
+
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
         join_result = await event_service.join_event(
             db=db,
             event_id=event_id,
-            # user_id=UUID(str(current_user.id)),
             full_name=request.full_name,
         )
+
         if join_result:
+            # Set the meeting->user mapping for chat gateway
+            # Use the event creator's user_id so chat works
+            if event.meeting_id and event.user_id:
+                await set_user_mapping(
+                    meeting_id=event.meeting_id,
+                    user_id=str(event.user_id),
+                    ttl=86400,
+                )
             return join_result
         else:
             raise HTTPException(status_code=400, detail="Failed to join event")
     except HTTPException as e:
-        # Handle the case where the event ID is not found
         raise HTTPException(status_code=e.status_code, detail=e.detail)
     except ValueError as e:
-        # Handle the case where the event ID is not found
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        # Handle any other exceptions
         raise HTTPException(status_code=500, detail=str(e))
 
 
