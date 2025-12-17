@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # CORS regex pattern for dynamic origins (e.g., BBB instances)
     cors_origin_regex: str = ""  # Optional regex pattern
 
+    frontend_url: str = "http://localhost:3000"
+
     model_config = {"env_file": ".env"}
 
 

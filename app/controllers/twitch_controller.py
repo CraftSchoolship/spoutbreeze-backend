@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.config.database.session import get_db
@@ -9,6 +10,7 @@ from app.controllers.user_controller import get_current_user
 from app.services.chat_gateway_client import chat_gateway_client
 from datetime import datetime, timedelta
 import logging
+from app.config.settings import get_settings
 
 router = APIRouter(prefix="/auth", tags=["Twitch Authentication"])
 logger = logging.getLogger(__name__)
@@ -23,8 +25,14 @@ async def twitch_callback(
     db: AsyncSession = Depends(get_db),
 ):
     """Handle Twitch OAuth callback - store token and notify gateway"""
+    settings = get_settings()
+
     if error:
-        raise HTTPException(status_code=400, detail=f"Twitch OAuth error: {error}")
+        # Redirect to frontend with error
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/settings?twitch_error={error}",
+            status_code=302,
+        )
 
     try:
         twitch_auth = TwitchAuth()
@@ -63,17 +71,16 @@ async def twitch_callback(
             )
         except Exception as e:
             logger.error(f"[Twitch] Failed to notify gateway: {e}")
-            # Don't fail the auth flow if gateway notification fails
 
-        return {
-            "message": "Successfully authenticated with Twitch",
-            "expires_in": token_data.get("expires_in"),
-            "user_id": str(current_user.id),
-        }
+        # Redirect to frontend with success
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/settings?twitch_success=true", status_code=302
+        )
     except Exception as e:
         logger.error(f"[Twitch] Auth failed: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to exchange code: {str(e)}"
+        return RedirectResponse(
+            url=f"{settings.frontend_url}/settings?twitch_error=auth_failed",
+            status_code=302,
         )
 
 
