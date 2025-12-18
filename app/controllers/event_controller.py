@@ -139,24 +139,6 @@ async def join_event(
         )
 
         if join_result:
-            # Set the meeting->user mapping for chat gateway
-            # Use the event creator's id so chat works
-            # IMPORTANT: Use internalMeetingID, not meetingID
-            if event.meeting_id and event.creator_id:
-                # Fetch the BBB meeting to get the internal_meeting_id
-                from app.models.bbb_models import BbbMeeting
-
-                bbb_result = await db.execute(
-                    select(BbbMeeting).where(BbbMeeting.meeting_id == event.meeting_id)
-                )
-                bbb_meeting = bbb_result.scalars().first()
-
-                if bbb_meeting and bbb_meeting.internal_meeting_id:
-                    await set_user_mapping(
-                        meeting_id=bbb_meeting.internal_meeting_id,  # Use internal ID!
-                        user_id=str(event.creator_id),
-                        ttl=86400,
-                    )
             return join_result
         else:
             raise HTTPException(status_code=400, detail="Failed to join event")
