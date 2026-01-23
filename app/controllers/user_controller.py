@@ -194,7 +194,7 @@ async def get_users(
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: bool = Depends(require_role("admin")),
+    # _: bool = Depends(require_role("admin")),
 ):
     """
     Get a list of users (Admin only) with caching
