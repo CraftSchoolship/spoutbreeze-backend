@@ -9,7 +9,18 @@ on:
       - "LICENSE"
   release:
     types: [published]
-
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
@@ -287,4 +298,55 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+
+  update-helm-charts:
+    name: Update Helm Charts
+    runs-on: ubuntu-latest
+    needs: [build-and-push-image]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    
+    env:
+      HELM_REPO: github.com/CraftSchoolship/deployment-configs
+      VALUES_FILE: values.yaml                           
+      
+    steps:
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GITOPS_APP_ID }}
+          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+        
+      - name: Checkout Helm Charts Repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HELM_REPO }}
+          token: ${{ steps.app-token.outputs.token }}
+          ref: main
+      
+      - name: Update Image Tag
+        run: |
+          sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
+          yq -i '.image.tag = "${{ needs.build-and-push-image.outputs.image_tag }}"' sputbreeze/backend/values.yaml
+
+      - name: Create Branch and Push
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          BRANCH_NAME="Update-image-tag"
+          git config --global user.email "bot@spoutbreeze.com"
+          git config --global user.name "SpoutBreeze Bot"
+          
+          git checkout -b $BRANCH_NAME
+          git add sputbreeze/backend/values.yaml
+          git commit -m "chore: update spoutbreeze image to ${{ needs.build-and-push-image.outputs.image_tag }}"
+          git push origin $BRANCH_NAME
+
+          gh pr create \
+            --repo CraftSchoolship/deployment-configs.git \
+            --title "Deploy SpoutBreeze ${{ needs.build-and-push-image.outputs.image_tag }}" \
+            --body "Automated update from CI pipeline." \
+            --base main \
+            --head $BRANCH_NAME
 
