@@ -25,7 +25,7 @@ logger = logging.getLogger("BroadcasterService")
 # Simple in-memory counters (NOT persistent, single-process only)
 _user_streams: dict[str, set[str]] = defaultdict(set)
 _stream_to_user: dict[str, str] = {}
-
+_stream_platforms: dict[str, str] = {}
 
 class BroadcasterService:
     def __init__(self):
@@ -139,16 +139,24 @@ class BroadcasterService:
             _stream_to_user[stream_id] = user_id
 
             platform_lower = platform.lower()
+            platform_connected = None
+
             if "twitch" in platform_lower:
                 try:
-                    await chat_gateway_client.connect_twitch(user_id)
+                    await chat_gateway_client.connect_twitch(user_id, meeting_id)
+                    platform_connected = "twitch"
                 except Exception as e:
                     logger.error(f"Twitch connect failed: {e}")
             elif "youtube" in platform_lower:
                 try:
-                    await chat_gateway_client.connect_youtube(user_id)
+                    await chat_gateway_client.connect_youtube(user_id, meeting_id)
+                    platform_connected = "youtube"
                 except Exception as e:
                     logger.error(f"YouTube connect failed: {e}")
+
+            # Track which platform for this stream
+            if platform_connected:
+                _stream_platforms[stream_id] = platform_connected
 
             return {
                 "status": data.get("status", "running"),
@@ -203,8 +211,26 @@ class BroadcasterService:
             logger.error(f"Stop failed: {e}")
             raise HTTPException(status_code=500, detail=f"Stop failed: {str(e)}")
 
+        # Get user_id and platform before cleanup
+        user_id = _stream_to_user.get(stream_id)
+        platform = _stream_platforms.get(stream_id)
+
+        # Disconnect platform chat
+        if user_id and platform:
+            try:
+                logger.info(f"[Broadcaster] Disconnecting {platform} for user {user_id}")
+                if platform == "twitch":
+                    await chat_gateway_client.disconnect_twitch(user_id)
+                elif platform == "youtube":
+                    await chat_gateway_client.disconnect_youtube(user_id)
+                logger.info(f"[Broadcaster] ✅ {platform.capitalize()} disconnected")
+            except Exception as e:
+                logger.error(f"[Broadcaster] Failed to disconnect {platform}: {e}")
+
         # In-memory cleanup
-        user_id = _stream_to_user.pop(stream_id, None)
+        _stream_to_user.pop(stream_id, None)
+        _stream_platforms.pop(stream_id, None)
+
         if user_id and stream_id in _user_streams[user_id]:
             _user_streams[user_id].remove(stream_id)
             if not _user_streams[user_id]:
