@@ -13,11 +13,12 @@ from app.utils.event_helpers import EventHelpers
 
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, update, delete, or_
 from sqlalchemy.orm import selectinload
 from app.config.logger_config import logger
 from app.config.settings import get_settings
 import secrets
+from app.models.base import user_event_association
 
 
 class EventService:
@@ -333,7 +334,22 @@ class EventService:
             )
 
             if user_id:
-                query = query.where(Event.creator_id == user_id)
+                # Include events where the user is either the creator
+                # or listed as an organizer (via user_event_association).
+                query = (
+                    query.join(
+                        user_event_association,
+                        Event.id == user_event_association.c.event_id,
+                        isouter=True,
+                    )
+                    .where(
+                        or_(
+                            Event.creator_id == user_id,
+                            user_event_association.c.user_id == user_id,
+                        )
+                    )
+                    .distinct()
+                )
 
             result = await db.execute(query)
             events = result.scalars().all()
