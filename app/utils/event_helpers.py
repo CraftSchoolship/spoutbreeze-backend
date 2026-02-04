@@ -58,9 +58,9 @@ class EventHelpers:
             welcome=f"Welcome to {event.title}",
             record=True,
             allow_start_stop_recording=True,
-            pluginManifests=[PluginManifests(url=plugin_manifests)]
-            if plugin_manifests
-            else None,
+            pluginManifests=(
+                [PluginManifests(url=plugin_manifests)] if plugin_manifests else None
+            ),
         )
         return meeting_request
 

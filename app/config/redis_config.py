@@ -212,7 +212,9 @@ def cached_db(
             filt_kwargs = {
                 k: v for k, v in kwargs.items() if not isinstance(v, AsyncSession)
             }
-            k: str = f"{key_prefix}:{func.__name__}:{generate_cache_key(*filt_args, **filt_kwargs)}"
+            k: str = (
+                f"{key_prefix}:{func.__name__}:{generate_cache_key(*filt_args, **filt_kwargs)}"
+            )
             hit: Optional[R] = None
             try:
                 hit = cast(Optional[R], await cache.get(k))

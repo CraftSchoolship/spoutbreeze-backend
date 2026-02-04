@@ -42,9 +42,7 @@ class TestChannelsController:
         """Test creating channel with duplicate name"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
-        channel_data = {
-            "name": test_channel.name  # Use existing channel name
-        }
+        channel_data = {"name": test_channel.name}  # Use existing channel name
 
         response = await client.post("/api/channels/", json=channel_data)
 
