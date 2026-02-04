@@ -177,9 +177,9 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,  # Explicit origins (frontend, API, etc.)
-    allow_origin_regex=setting.cors_origin_regex
-    if setting.cors_origin_regex
-    else None,  # Regex for dynamic origins (BBB instances)
+    allow_origin_regex=(
+        setting.cors_origin_regex if setting.cors_origin_regex else None
+    ),  # Regex for dynamic origins (BBB instances)
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],  # Allow all headers for flexibility

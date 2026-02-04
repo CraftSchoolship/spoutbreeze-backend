@@ -103,9 +103,7 @@ async def get_token_status(
     try:
         stmt = (
             select(TwitchToken)
-            .where(
-                TwitchToken.user_id == current_user.id, TwitchToken.is_active
-            )
+            .where(TwitchToken.user_id == current_user.id, TwitchToken.is_active)
             .order_by(TwitchToken.created_at.desc())
         )
 

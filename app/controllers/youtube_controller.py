@@ -147,9 +147,7 @@ async def get_token_status(
     try:
         stmt = (
             select(YouTubeToken)
-            .where(
-                YouTubeToken.user_id == current_user.id, YouTubeToken.is_active
-            )
+            .where(YouTubeToken.user_id == current_user.id, YouTubeToken.is_active)
             .order_by(YouTubeToken.created_at.desc())
         )
 
@@ -170,9 +168,11 @@ async def get_token_status(
         return {
             "user_id": str(current_user.id),
             "has_token": True,
-            "token_preview": token_record.access_token[:20] + "..."
-            if token_record.access_token
-            else None,
+            "token_preview": (
+                token_record.access_token[:20] + "..."
+                if token_record.access_token
+                else None
+            ),
             "expires_at": token_record.expires_at.isoformat(),
             "current_time": current_time.isoformat(),
             "time_until_expiry": str(time_until_expiry),
