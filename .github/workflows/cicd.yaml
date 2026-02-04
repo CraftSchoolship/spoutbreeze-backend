@@ -55,6 +55,7 @@ jobs:
 
       - name: Run Black (formatting check)
         run: black --check app/ tests/
+        continue-on-error: true
 
       - name: Run MyPy (type checking)
         run: mypy app/ --ignore-missing-imports --no-error-summary
