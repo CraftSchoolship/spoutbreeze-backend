@@ -83,10 +83,9 @@ class PaymentService:
             customer_id = await PaymentService.get_or_create_customer(user, db)
 
             # Check if user has an existing subscription
-            result = await db.execute(
+            await db.execute(
                 select(Subscription).where(Subscription.user_id == user.id)
             )
-            existing_subscription = result.scalar_one_or_none()
 
             # Create checkout session
             checkout_params = {
@@ -397,8 +396,6 @@ class PaymentService:
     ) -> None:
         """Handle checkout.session.completed event"""
         session = data.get("object", {})
-        customer_id = session.get("customer")
-        subscription_id = session.get("subscription")
         user_id = session.get("metadata", {}).get("user_id")
 
         if not user_id:
