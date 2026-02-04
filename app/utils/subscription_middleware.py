@@ -47,6 +47,10 @@ class SubscriptionGuard:
     @staticmethod
     async def check_subscription_active(user: User, subscription: Subscription) -> None:
         """Check if subscription is active"""
+        # Skip check for users with unlimited access
+        if user.unlimited_access:
+            return
+        
         if not subscription.is_active():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -56,6 +60,10 @@ class SubscriptionGuard:
     @staticmethod
     async def check_trial_expired(subscription: Subscription) -> None:
         """Check if trial period has expired"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         if subscription.is_trial() and subscription.trial_end:
             if datetime.utcnow() > subscription.trial_end:
                 raise HTTPException(
@@ -68,6 +76,10 @@ class SubscriptionGuard:
         subscription: Subscription, requested_quality: str
     ) -> None:
         """Check if requested stream quality is allowed for the plan"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         limits = subscription.get_plan_limits()
         max_quality = limits.get("max_quality", "720p")
 
@@ -94,6 +106,10 @@ class SubscriptionGuard:
         subscription: Subscription, current_stream_count: int
     ) -> None:
         """Check if user can start another concurrent stream"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         limits = subscription.get_plan_limits()
         max_streams = limits.get("max_concurrent_streams")
 
@@ -108,6 +124,10 @@ class SubscriptionGuard:
         subscription: Subscription, stream_duration_hours: float
     ) -> None:
         """Check if stream duration exceeds plan limit"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         limits = subscription.get_plan_limits()
         max_duration = limits.get("max_stream_duration_hours")
 
@@ -120,6 +140,10 @@ class SubscriptionGuard:
     @staticmethod
     async def check_feature_access(subscription: Subscription, feature: str) -> None:
         """Check if user has access to a specific feature"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         limits = subscription.get_plan_limits()
 
         feature_map = {
@@ -142,6 +166,10 @@ class SubscriptionGuard:
     @staticmethod
     async def require_paid_plan(subscription: Subscription) -> None:
         """Require user to have a paid plan (Pro or Enterprise)"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         if subscription.plan == SubscriptionPlan.FREE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -151,6 +179,10 @@ class SubscriptionGuard:
     @staticmethod
     async def require_enterprise_plan(subscription: Subscription) -> None:
         """Require user to have Enterprise plan"""
+        # Skip check for users with unlimited access
+        if subscription.user.unlimited_access:
+            return
+        
         if subscription.plan != SubscriptionPlan.ENTERPRISE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

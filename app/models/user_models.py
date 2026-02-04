@@ -42,6 +42,7 @@ class User(Base):
         DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    unlimited_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships – note the use of fully qualified names if needed or move to __init__.py import order
     rtmp_endpoints: Mapped[list[RtmpEndpoint]] = relationship(
