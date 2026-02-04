@@ -17,7 +17,6 @@ from app.config.redis_config import cache
 import uuid
 import inspect
 
-
 auth_service = AuthService()
 settings = get_settings()
 

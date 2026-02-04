@@ -41,7 +41,7 @@ async def create_meeting(
         db=db,
     )
     await set_user_mapping(
-        meeting_id=result.get("internalMeetingID"),
+        meeting_id=str(result.get("internalMeetingID", "")),
         user_id=str(current_user.id),
         ttl=86400,
     )

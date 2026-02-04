@@ -62,7 +62,7 @@ class PaymentService:
             )
             logger.info(f"Created Stripe customer {customer.id} for user {user.id}")
             return customer.id
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create Stripe customer: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -114,15 +114,15 @@ class PaymentService:
             # That caused paid upgrades (e.g., PRO) to start at $0 with the plan switching to trialing.
             # To require immediate payment for PRO/ENTERPRISE, only apply a trial when checking out the FREE price.
             if price_id == settings.stripe_free_price_id:
-                checkout_params["subscription_data"]["trial_period_days"] = 14
+                checkout_params["subscription_data"]["trial_period_days"] = 14  # type: ignore[index]
 
-            session = stripe.checkout.Session.create(**checkout_params)
+            session = stripe.checkout.Session.create(**checkout_params)  # type: ignore[arg-type]
 
             logger.info(f"Created checkout session {session.id} for user {user.id}")
 
-            return CheckoutSessionResponse(session_id=session.id, url=session.url)
+            return CheckoutSessionResponse(session_id=session.id, url=session.url or "")
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create checkout session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -159,7 +159,7 @@ class PaymentService:
 
             return CustomerPortalResponse(url=session.url)
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create portal session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -275,7 +275,7 @@ class PaymentService:
                 logger.info(f"Reconciled subscription for user {user.id} from Stripe")
 
             return subscription
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Stripe error during reconcile: {str(e)}")
             return subscription
 
@@ -341,7 +341,7 @@ class PaymentService:
             # Cancel in Stripe
             if subscription.stripe_subscription_id:
                 if cancel_immediately:
-                    stripe.Subscription.delete(subscription.stripe_subscription_id)
+                    stripe.Subscription.delete(subscription.stripe_subscription_id)  # type: ignore[arg-type]
                     subscription.status = SubscriptionStatus.CANCELED.value
                     subscription.canceled_at = datetime.utcnow()
                 else:
@@ -356,7 +356,7 @@ class PaymentService:
             logger.info(f"Canceled subscription for user {user.id}")
             return subscription
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to cancel subscription: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

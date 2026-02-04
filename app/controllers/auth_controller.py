@@ -16,12 +16,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from app.models.user_models import User
 from app.controllers.user_controller import get_current_user
-from typing import cast, Dict, Any, Optional
+from typing import cast, Dict, Any, Optional, Literal
 from datetime import timedelta
 
 from app.config.logger_config import logger
 from pydantic import BaseModel
-
 
 bearer_scheme = HTTPBearer()
 settings = get_settings()
@@ -69,7 +68,9 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         expires=access_token_expires,
         httponly=True,
         secure=is_production,  # True in production, False in development
-        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
+        samesite=cast(
+            Literal["lax", "strict", "none"], samesite_setting
+        ),  # "none" in production for cross-domain, "lax" in dev
         path="/",
         domain=cookie_domain,
     )
@@ -81,7 +82,9 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         expires=refresh_token_expires,
         httponly=True,
         secure=is_production,  # True in production, False in development
-        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
+        samesite=cast(
+            Literal["lax", "strict", "none"], samesite_setting
+        ),  # "none" in production for cross-domain, "lax" in dev
         path="/",
         domain=cookie_domain,
     )

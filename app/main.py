@@ -28,7 +28,6 @@ from app.controllers.youtube_controller import router as youtube_router
 from app.controllers.payment_controller import router as payment_router
 from app.controllers.internal_controller import router as internal_router
 
-
 # from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings

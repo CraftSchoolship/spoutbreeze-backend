@@ -15,7 +15,6 @@ from app.models.event.event_models import Event
 from app.models.event.event_models import EventStatus  # Import EventStatus
 from app.models.payment_models import Subscription, Transaction
 
-
 # Test database URL (SQLite for simplicity in tests)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 

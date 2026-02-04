@@ -105,7 +105,7 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.sadd(key, *values)
+            return await self.redis_client.sadd(key, *values)  # type: ignore[misc]
         except Exception as e:
             logger.error(f"SADD {key} error: {e}")
             return 0
@@ -115,7 +115,7 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.srem(key, *values)
+            return await self.redis_client.srem(key, *values)  # type: ignore[misc]
         except Exception as e:
             logger.error(f"SREM {key} error: {e}")
             return 0
@@ -125,7 +125,7 @@ class RedisCache:
         if not self.redis_client:
             return set()
         try:
-            members = await self.redis_client.smembers(key)
+            members = await self.redis_client.smembers(key)  # type: ignore[misc]
             # Decode bytes to strings if needed
             return {m.decode() if isinstance(m, bytes) else m for m in members}
         except Exception as e:
@@ -137,7 +137,7 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.scard(key)
+            return await self.redis_client.scard(key)  # type: ignore[misc]
         except Exception as e:
             logger.error(f"SCARD {key} error: {e}")
             return 0
