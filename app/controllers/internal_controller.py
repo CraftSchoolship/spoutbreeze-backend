@@ -32,7 +32,7 @@ async def get_twitch_token(
             select(TwitchToken)
             .where(
                 TwitchToken.user_id == user_id,
-                TwitchToken.is_active == True,
+                TwitchToken.is_active,
                 TwitchToken.expires_at > datetime.now(),
             )
             .order_by(TwitchToken.created_at.desc())
@@ -70,7 +70,7 @@ async def get_youtube_token(
             select(YouTubeToken)
             .where(
                 YouTubeToken.user_id == user_id,
-                YouTubeToken.is_active == True,
+                YouTubeToken.is_active,
                 YouTubeToken.expires_at > datetime.now(),
             )
             .order_by(YouTubeToken.created_at.desc())

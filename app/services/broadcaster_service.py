@@ -56,10 +56,7 @@ class BroadcasterService:
                 subscription = await PaymentService.create_free_subscription(user, db)
 
             limits = subscription.get_plan_limits()
-            resolution = limits.get("max_quality", "720p")
-            max_duration = limits.get("max_stream_duration_hours")
             max_concurrent_streams = limits.get("max_concurrent_streams")
-            is_basic_plan = max_duration == 1
 
             # Concurrent stream check via in-memory counter
             active_stream_count = len(_user_streams[user_id])

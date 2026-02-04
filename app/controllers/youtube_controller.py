@@ -148,7 +148,7 @@ async def get_token_status(
         stmt = (
             select(YouTubeToken)
             .where(
-                YouTubeToken.user_id == current_user.id, YouTubeToken.is_active == True
+                YouTubeToken.user_id == current_user.id, YouTubeToken.is_active
             )
             .order_by(YouTubeToken.created_at.desc())
         )

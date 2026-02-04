@@ -32,7 +32,7 @@ class RedisCache:
                 socket_timeout=5,
                 socket_connect_timeout=5,
             )
-            ping_result = await self.redis_client.ping()  # type: ignore[misc]
+            await self.redis_client.ping()  # type: ignore[misc]
             logger.info("Redis connected")
         except Exception as e:
             logger.error(f"Redis connect failed: {e}")
@@ -94,7 +94,7 @@ class RedisCache:
         if not self.redis_client:
             return False
         try:
-            ping_result = await self.redis_client.ping()  # type: ignore[misc]
+            await self.redis_client.ping()  # type: ignore[misc]
             return True
         except Exception:
             return False
