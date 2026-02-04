@@ -48,7 +48,7 @@ jobs:
 
       - name: Install linting tools
         run: |
-          pip install ruff black mypy
+          pip install ruff black==26.1.0 mypy
 
       - name: Run Ruff (linting)
         run: ruff check app/ tests/ --output-format=github
