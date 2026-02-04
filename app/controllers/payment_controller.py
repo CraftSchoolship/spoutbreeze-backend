@@ -162,7 +162,7 @@ async def get_subscription(
     # Add plan limits to response (computed from current plan)
     limits = subscription.get_plan_limits()
 
-    return SubscriptionWithLimits(**subscription.__dict__, limits=limits)
+    return SubscriptionWithLimits(**subscription.__dict__, limits=limits)  # type: ignore[arg-type]
 
 
 @router.post("/subscription/cancel", response_model=SubscriptionResponse)
@@ -226,7 +226,7 @@ async def stripe_webhook(
     except ValueError as e:
         logger.error(f"Invalid webhook payload: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
+    except stripe.SignatureVerificationError as e:
         logger.error(f"Invalid webhook signature: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 

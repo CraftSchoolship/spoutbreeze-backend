@@ -9,7 +9,6 @@ from datetime import datetime
 
 from app.config.database.session import get_db
 from app.services.payment_service import PaymentService
-from app.services.auth_service import AuthService
 from app.models.user_models import User
 from app.models.payment_models import Subscription, SubscriptionPlan
 from app.config.logger_config import get_logger
@@ -28,8 +27,9 @@ class SubscriptionGuard:
         Get current user with their subscription
         Creates a free subscription if user doesn't have one
         """
-        auth_service = AuthService(db)
-        user = await auth_service.get_current_user(request)
+        from app.controllers.user_controller import get_current_user
+
+        user = await get_current_user(request, db)
 
         if not user:
             raise HTTPException(
