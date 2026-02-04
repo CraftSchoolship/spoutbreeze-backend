@@ -118,6 +118,19 @@ class Subscription(Base):
 
     def get_plan_limits(self) -> dict:
         """Get plan limits based on current plan"""
+        # Users with unlimited access get enterprise-level limits
+        if self.user.unlimited_access:
+            return {
+                "max_quality": "4K",
+                "max_concurrent_streams": None,  # Unlimited
+                "max_stream_duration_hours": None,  # Unlimited
+                "support_response_hours": 0,  # 24/7
+                "support_channels": ["email", "chat"],
+                "chat_filter": True,
+                "oauth_enabled": True,
+                "analytics_enabled": True,
+            }
+        
         if self.plan == SubscriptionPlan.FREE.value:
             return {
                 "max_quality": "720p",
