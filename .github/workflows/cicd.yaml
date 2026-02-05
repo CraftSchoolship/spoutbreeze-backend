@@ -234,6 +234,30 @@ jobs:
       - name: Check for pending migrations
         env:
           DB_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
+          KEYCLOAK_SERVER_URL: http://localhost:8080
+          KEYCLOAK_CLIENT_ID: test-client
+          KEYCLOAK_CLIENT_SECRET: test-secret
+          KEYCLOAK_REALM: test-realm
+          BBB_SERVER_BASE_URL: http://localhost:8090
+          BBB_SECRET: test-secret
+          PLUGIN_MANIFESTS_URL: http://localhost/plugin
+          BROADCASTER_API_URL: http://localhost:8091
+          TWITCH_SERVER: irc.chat.twitch.tv
+          TWITCH_PORT: 6667
+          TWITCH_NICK: test_bot
+          TWITCH_CHANNEL: test_channel
+          TWITCH_REDIRECT_URI: http://localhost/callback
+          TWITCH_CLIENT_ID: test
+          TWITCH_CLIENT_SECRET: test
+          TWITCH_TOKEN_URL: https://id.twitch.tv/oauth2/token
+          YOUTUBE_CLIENT_ID: test
+          YOUTUBE_CLIENT_SECRET: test
+          YOUTUBE_REDIRECT_URI: http://localhost/callback
+          STRIPE_SECRET_KEY: sk_test_fake
+          STRIPE_PUBLISHABLE_KEY: pk_test_fake
+          STRIPE_WEBHOOK_SECRET: whsec_fake
+          CORS_ORIGINS: http://localhost:3000
+          CHAT_GATEWAY_SHARED_SECRET: test-secret
         run: |
           alembic upgrade head
           
@@ -242,6 +266,30 @@ jobs:
       - name: Test migration rollback
         env:
           DB_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
+          KEYCLOAK_SERVER_URL: http://localhost:8080
+          KEYCLOAK_CLIENT_ID: test-client
+          KEYCLOAK_CLIENT_SECRET: test-secret
+          KEYCLOAK_REALM: test-realm
+          BBB_SERVER_BASE_URL: http://localhost:8090
+          BBB_SECRET: test-secret
+          PLUGIN_MANIFESTS_URL: http://localhost/plugin
+          BROADCASTER_API_URL: http://localhost:8091
+          TWITCH_SERVER: irc.chat.twitch.tv
+          TWITCH_PORT: 6667
+          TWITCH_NICK: test_bot
+          TWITCH_CHANNEL: test_channel
+          TWITCH_REDIRECT_URI: http://localhost/callback
+          TWITCH_CLIENT_ID: test
+          TWITCH_CLIENT_SECRET: test
+          TWITCH_TOKEN_URL: https://id.twitch.tv/oauth2/token
+          YOUTUBE_CLIENT_ID: test
+          YOUTUBE_CLIENT_SECRET: test
+          YOUTUBE_REDIRECT_URI: http://localhost/callback
+          STRIPE_SECRET_KEY: sk_test_fake
+          STRIPE_PUBLISHABLE_KEY: pk_test_fake
+          STRIPE_WEBHOOK_SECRET: whsec_fake
+          CORS_ORIGINS: http://localhost:3000
+          CHAT_GATEWAY_SHARED_SECRET: test-secret
         run: |
           alembic downgrade -1
           alembic upgrade head
