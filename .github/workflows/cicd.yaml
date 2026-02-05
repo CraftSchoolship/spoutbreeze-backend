@@ -304,12 +304,11 @@ jobs:
     name: Update Helm Charts
     runs-on: ubuntu-latest
     needs: [build-and-push-image]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/cicd-enhancements')
     
     env:
-      HELM_REPO: github.com/CraftSchoolship/deployment-configs
-      VALUES_FILE: values.yaml                           
-      
+      HELM_REPO: CraftSchoolship/deployment-configs
+      VALUES_FILE: values.yaml                             
     steps:
       - name: Generate GitHub App Token
         id: app-token
@@ -329,25 +328,25 @@ jobs:
       - name: Update Image Tag
         run: |
           sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && sudo chmod +x /usr/bin/yq
-          yq -i '.image.tag = "${{ needs.build-and-push-image.outputs.image_tag }}"' sputbreeze/backend/values.yaml
+          yq -i '.image.tag = "${{ needs.build-and-push-image.outputs.image_tag }}"' spoutbreeze/backend/values.yaml
 
       - name: Create Branch and Push
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          BRANCH_NAME="Update-image-tag"
+          BRANCH_NAME="update-image-tag-${{ needs.build-and-push-image.outputs.image_tag }}"
           git config --global user.email "bot@spoutbreeze.com"
           git config --global user.name "SpoutBreeze Bot"
           
-          git checkout -b $BRANCH_NAME
-          git add sputbreeze/backend/values.yaml
+          git checkout -b "$BRANCH_NAME"
+          git add spoutbreeze/backend/values.yaml
           git commit -m "chore: update spoutbreeze image to ${{ needs.build-and-push-image.outputs.image_tag }}"
-          git push origin $BRANCH_NAME
+          git push origin "$BRANCH_NAME"
 
           gh pr create \
-            --repo CraftSchoolship/deployment-configs.git \
+            --repo CraftSchoolship/deployment-configs \
             --title "Deploy SpoutBreeze ${{ needs.build-and-push-image.outputs.image_tag }}" \
             --body "Automated update from CI pipeline." \
             --base main \
-            --head $BRANCH_NAME
+            --head "$BRANCH_NAME"
 
