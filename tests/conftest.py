@@ -2,7 +2,7 @@ import pytest
 import pytest_asyncio
 import asyncio
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 # Mock Keycloak BEFORE importing anything else to prevent connection errors
 # Create mock objects with all required methods
@@ -26,19 +26,20 @@ mock_keycloak_module.KeycloakOpenID = MagicMock(return_value=mock_keycloak_openi
 mock_keycloak_module.KeycloakAdmin = MagicMock(return_value=mock_keycloak_admin)
 sys.modules['keycloak'] = mock_keycloak_module
 
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from uuid import uuid4
-from datetime import datetime, timedelta
+# These imports must come AFTER the keycloak mock to prevent connection errors
+from httpx import AsyncClient, ASGITransport  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
+from uuid import uuid4  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
 
-from app.main import app
-from app.config.database.session import get_db, Base
-from app.models.user_models import User
-from app.models.channel.channels_model import Channel
-from app.models.stream_models import RtmpEndpoint
-from app.models.event.event_models import Event
-from app.models.event.event_models import EventStatus  # Import EventStatus
-from app.models.payment_models import Subscription, Transaction
+from app.main import app  # noqa: E402
+from app.config.database.session import get_db, Base  # noqa: E402
+from app.models.user_models import User  # noqa: E402
+from app.models.channel.channels_model import Channel  # noqa: E402
+from app.models.stream_models import RtmpEndpoint  # noqa: E402
+from app.models.event.event_models import Event  # noqa: E402
+from app.models.event.event_models import EventStatus  # noqa: E402
+from app.models.payment_models import Subscription, Transaction  # noqa: E402
 
 # Test database URL (SQLite for simplicity in tests)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
