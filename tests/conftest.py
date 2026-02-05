@@ -1,6 +1,31 @@
 import pytest
 import pytest_asyncio
 import asyncio
+import sys
+from unittest.mock import MagicMock, patch
+
+# Mock Keycloak BEFORE importing anything else to prevent connection errors
+# Create mock objects with all required methods
+mock_keycloak_openid = MagicMock()
+mock_keycloak_openid.public_key.return_value = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtestkey\n-----END PUBLIC KEY-----"
+mock_keycloak_openid.well_known.return_value = {
+    "issuer": "http://localhost:8080/realms/test",
+    "authorization_endpoint": "http://localhost:8080/realms/test/protocol/openid-connect/auth",
+    "token_endpoint": "http://localhost:8080/realms/test/protocol/openid-connect/token",
+    "userinfo_endpoint": "http://localhost:8080/realms/test/protocol/openid-connect/userinfo",
+    "end_session_endpoint": "http://localhost:8080/realms/test/protocol/openid-connect/logout",
+    "jwks_uri": "http://localhost:8080/realms/test/protocol/openid-connect/certs",
+}
+
+mock_keycloak_admin = MagicMock()
+
+# Mock the keycloak module's classes before they're imported by settings.py
+# This creates a fake keycloak module with mocked classes
+mock_keycloak_module = MagicMock()
+mock_keycloak_module.KeycloakOpenID = MagicMock(return_value=mock_keycloak_openid)
+mock_keycloak_module.KeycloakAdmin = MagicMock(return_value=mock_keycloak_admin)
+sys.modules['keycloak'] = mock_keycloak_module
+
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from uuid import uuid4

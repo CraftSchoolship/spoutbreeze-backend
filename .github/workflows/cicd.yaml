@@ -78,7 +78,7 @@ jobs:
           pip install bandit safety pip-audit
 
       - name: Run Bandit (security linter)
-        run: bandit -r app/ -ll -ii -x tests/
+        run: bandit -r app/ -ll -ii -x tests/ -c .bandit
 
       - name: Check dependencies for vulnerabilities
         run: |
