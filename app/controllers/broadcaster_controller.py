@@ -46,6 +46,7 @@ async def start_broadcaster(
         bbb_service=bbb_service,
         user_id=user_id,
         db=db,
+        requested_resolution=payload.resolution,  # <-- NEW
     )
 
 

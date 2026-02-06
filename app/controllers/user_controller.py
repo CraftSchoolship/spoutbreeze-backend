@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request, Path
 from typing import List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from app.services.auth_service import AuthService
 from app.config.database.session import get_db
 from app.models.user_models import User
@@ -16,7 +17,10 @@ from app.services.cached.user_service_cached import user_service_cached
 from app.config.redis_config import cache
 import uuid
 import inspect
+from pydantic import BaseModel
 
+class UpdateResolutionRequest(BaseModel):
+    default_resolution: str
 
 auth_service = AuthService()
 settings = get_settings()
@@ -401,3 +405,96 @@ async def get_cache_stats(
         "cache_status": "healthy" if healthy else "unhealthy",
         "cache_patterns": cache_patterns,
     }
+
+
+@router.get("/me/resolution")
+async def get_user_resolution(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get current user's default resolution setting
+    """
+    # Re-fetch from DB to ensure we get the latest value, not cached
+    result = await db.execute(
+        select(User).where(User.id == current_user.id)
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    logger.info(f"Fetching resolution for user {user.username}: {user.default_resolution}")
+    
+    return {
+        "default_resolution": user.default_resolution,
+    }
+
+
+@router.patch("/me/resolution")
+async def update_user_resolution(
+    resolution_data: UpdateResolutionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update current user's default resolution setting
+    """
+    request_id = str(uuid.uuid4())
+    logger.info(
+        f"[{request_id}] Updating resolution for user: {current_user.username} to {resolution_data.default_resolution}"
+    )
+
+    try:
+        # Validate resolution value
+        valid_resolutions = ["360p", "480p", "720p", "1080p", "1440p", "4K"]
+        if resolution_data.default_resolution not in valid_resolutions:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid resolution. Must be one of: {', '.join(valid_resolutions)}",
+            )
+
+        # Re-fetch user from database to get a persistent instance
+        result = await db.execute(
+            select(User).where(User.id == current_user.id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Update resolution
+        user.default_resolution = resolution_data.default_resolution
+        await db.commit()
+        await db.refresh(user)
+
+        # Invalidate cache - THIS IS CRITICAL
+        await user_service_cached.invalidate_user_cache(
+            user.id, user.keycloak_id
+        )
+
+        logger.info(
+            f"[{request_id}] Resolution updated successfully for user: {user.username} - new value: {user.default_resolution}"
+        )
+
+        return {
+            "default_resolution": user.default_resolution,
+            "message": "Resolution updated successfully",
+        }
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[{request_id}] Error updating resolution: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update resolution setting",
+        )
