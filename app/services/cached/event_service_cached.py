@@ -78,6 +78,11 @@ class EventServiceCached(EventService):
     ) -> EventResponse:
         res = await super().create_event(db, event, user_id)
         await self._invalidate_after_change(event_id=res.id, channel_id=res.channel_id)
+        # Also invalidate channels cache in case a new channel was created
+        await cache.delete_pattern("channels_all:*")
+        await cache.delete_pattern("channels_user:*")
+        await cache.delete_pattern("channels_by_id:*")
+        await cache.delete_pattern("channels_by_name:*")
         return res
 
     async def start_event(
