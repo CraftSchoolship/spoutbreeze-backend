@@ -289,8 +289,13 @@ async def refresh_token(request: Request, response: Response):
             "token_type": "Bearer",
         }
     except Exception as e:
-        # Clear cookies on error
-        clear_auth_cookies(response)
+        # Only clear the access_token on failed refresh, NOT the refresh_token.
+        # The middleware / client will detect the expired refresh token via JWT
+        # expiry and handle the full logout (clearing both cookies) if needed.
+        is_production = settings.env == "production"
+        cookie_domain = settings.domain if is_production else None
+        response.delete_cookie("access_token", path="/", domain=cookie_domain)
+
         logger.error(f"Refresh token error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

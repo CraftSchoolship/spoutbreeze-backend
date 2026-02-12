@@ -6,8 +6,10 @@ checkout, webhooks, and plan information.
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 from typing import List, Optional
 import stripe
+from sqlalchemy import select
 
 from app.config.database.session import get_db
 from app.config.settings import get_settings
@@ -15,6 +17,7 @@ from app.config.logger_config import get_logger
 from app.services.payment_service import PaymentService
 from app.services.auth_service import AuthService
 from app.models.user_models import User
+from app.models.payment_models import Subscription
 from app.models.payment_schemas import (
     CreateCheckoutSessionRequest,
     CheckoutSessionResponse,
@@ -25,6 +28,7 @@ from app.models.payment_schemas import (
     TransactionResponse,
     PlanInfo,
     CancelSubscriptionRequest,
+    PlanLimits,
 )
 from app.services.cached.user_service_cached import user_service_cached
 
@@ -272,31 +276,27 @@ async def get_transactions(
         )
 
 
-@router.get("/limits")
+@router.get("/limits", response_model=PlanLimits)
 async def get_current_limits(
-    user: User = Depends(get_current_user),
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get current user's plan limits
+    Get current user's subscription plan limits
     """
-    subscription = await PaymentService.get_user_subscription(user, db)
+    user = await get_current_user(request, db)
+    
+    # Eagerly load user relationship to avoid lazy loading issues
+    result = await db.execute(
+        select(Subscription)
+        .options(joinedload(Subscription.user))
+        .where(Subscription.user_id == user.id)
+    )
+    subscription = result.unique().scalar_one_or_none()
 
     if not subscription:
         subscription = await PaymentService.create_free_subscription(user, db)
-
-    # If subscription is not active/trialing (canceled, unpaid, etc.),
-    # immediately apply Free plan limits
-    if not subscription.is_active():
-        return {
-            "max_quality": "720p",
-            "max_concurrent_streams": 1,
-            "max_stream_duration_hours": 1,
-            "support_response_hours": 72,
-            "support_channels": ["email"],
-            "chat_filter": False,
-            "oauth_enabled": False,
-            "analytics_enabled": False,
-        }
+        # Refresh to load the user relationship
+        await db.refresh(subscription, ["user"])
 
     return subscription.get_plan_limits()

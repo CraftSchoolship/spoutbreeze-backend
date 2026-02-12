@@ -1,7 +1,7 @@
 from requests import Timeout as RequestsTimeout
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import requests
 import logging
 from collections import defaultdict
@@ -27,6 +27,34 @@ _user_streams: dict[str, set[str]] = defaultdict(set)
 _stream_to_user: dict[str, str] = {}
 _stream_platforms: dict[str, str] = {}
 
+# Quality order helper
+_QUALITY_ORDER: dict[str, int] = {
+    "360p": 0,
+    "480p": 1,
+    "720p": 2,
+    "1080p": 3,
+    "1440p": 4,
+    "4K": 5,
+}
+
+
+def _clamp_resolution(requested: Optional[str], max_quality: str) -> str:
+    """
+    Return the requested resolution if it is <= max_quality; otherwise return max_quality.
+    If requested is None/invalid, fall back to max_quality.
+    """
+    if max_quality not in _QUALITY_ORDER:
+        max_quality = "720p"
+
+    if not requested or requested not in _QUALITY_ORDER:
+        return max_quality
+
+    if _QUALITY_ORDER[requested] <= _QUALITY_ORDER[max_quality]:
+        return requested
+
+    return max_quality
+
+
 class BroadcasterService:
     def __init__(self):
         settings = get_settings()
@@ -44,6 +72,7 @@ class BroadcasterService:
         bbb_service: BBBService,
         user_id: str,
         db,
+        requested_resolution: Optional[str] = None,  # <-- NEW parameter
     ) -> Dict[str, Any]:
         try:
             result = await db.execute(select(User).where(User.id == user_id))
@@ -56,10 +85,16 @@ class BroadcasterService:
                 subscription = await PaymentService.create_free_subscription(user, db)
 
             limits = subscription.get_plan_limits()
-            resolution = limits.get("max_quality", "720p")
+            max_quality = limits.get("max_quality", "720p")
             max_duration = limits.get("max_stream_duration_hours")
             max_concurrent_streams = limits.get("max_concurrent_streams")
             is_basic_plan = max_duration == 1
+
+            # Clamp requested resolution to the plan's max
+            effective_resolution = _clamp_resolution(
+                requested_resolution or user.default_resolution,
+                max_quality,
+            )
 
             # Concurrent stream check via in-memory counter
             active_stream_count = len(_user_streams[user_id])
@@ -96,11 +131,9 @@ class BroadcasterService:
 
             broadcaster_payload = BroadcasterRequest(
                 close_popups=True,
-                # is_basic_plan=is_basic_plan,
-                is_basic_plan=False,
+                is_basic_plan=is_basic_plan,
                 fps=16,
-                # resolution=resolution,
-                resolution="720p",
+                resolution=effective_resolution,  # <-- use clamped resolution
                 bbb_server_url=join_url,
                 stream=StreamConfig(
                     platform=platform,

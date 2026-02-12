@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List, Dict, Any
 
 
@@ -25,6 +25,10 @@ class BroadcasterRobot(BaseModel):
     stream_key: str
     password: str
     platform: str
+    resolution: Optional[str] = Field(
+        default=None,
+        description="Requested stream resolution (e.g. 360p, 480p, 720p, 1080p, 1440p, 4K)",
+    )
 
 
 class PluginManifests(BaseModel):
