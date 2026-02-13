@@ -27,4 +27,9 @@ RUN mkdir -p certs && chmod 777 certs
 EXPOSE 8000
 
 # Run the application
-CMD ["fastapi", "run", "app/main.py"]
+# Copy scripts and ensure permissions
+COPY scripts/start.sh /app/scripts/start.sh
+RUN chmod +x /app/scripts/start.sh
+
+# Run the application via start script
+CMD ["/app/scripts/start.sh"]
