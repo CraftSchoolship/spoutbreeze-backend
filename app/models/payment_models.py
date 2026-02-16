@@ -28,10 +28,55 @@ class SubscriptionStatus(str, Enum):
     ACTIVE = "active"
     TRIALING = "trialing"
     CANCELED = "canceled"
+    EXPIRED = "expired"
     INCOMPLETE = "incomplete"
     INCOMPLETE_EXPIRED = "incomplete_expired"
     PAST_DUE = "past_due"
     UNPAID = "unpaid"
+
+
+PLAN_LIMITS = {
+    "unlimited": {
+        "max_quality": "4K",
+        "max_concurrent_streams": None,
+        "max_stream_duration_hours": None,
+        "support_response_hours": 0,
+        "support_channels": ["email", "chat"],
+        "chat_filter": True,
+        "oauth_enabled": True,
+        "analytics_enabled": True,
+    },
+    SubscriptionPlan.FREE.value: {
+        "max_quality": "720p",
+        "max_concurrent_streams": 1,
+        "max_stream_duration_hours": 1,
+        "support_response_hours": 72,
+        "support_channels": ["email"],
+        "chat_filter": False,
+        "oauth_enabled": False,
+        "analytics_enabled": False,
+    },
+    SubscriptionPlan.PRO.value: {
+        "max_quality": "1080p",
+        "max_concurrent_streams": 10,
+        "max_stream_duration_hours": None,
+        "support_response_hours": 24,
+        "support_channels": ["email", "chat"],
+        "chat_filter": False,
+        "oauth_enabled": False,
+        "analytics_enabled": False,
+    },
+    SubscriptionPlan.ENTERPRISE.value: {
+        "max_quality": "4K",
+        "max_concurrent_streams": None,
+        "max_stream_duration_hours": None,
+        "support_response_hours": 0,
+        "support_channels": ["email", "chat"],
+        "chat_filter": True,
+        "oauth_enabled": True,
+        "analytics_enabled": True,
+    },
+}
 
 
 class Subscription(Base):
@@ -118,53 +163,9 @@ class Subscription(Base):
 
     def get_plan_limits(self) -> dict:
         """Get plan limits based on current plan"""
-        # Users with unlimited access get enterprise-level limits
         if self.user.unlimited_access:
-            return {
-                "max_quality": "4K",
-                "max_concurrent_streams": None,  # Unlimited
-                "max_stream_duration_hours": None,  # Unlimited
-                "support_response_hours": 0,  # 24/7
-                "support_channels": ["email", "chat"],
-                "chat_filter": True,
-                "oauth_enabled": True,
-                "analytics_enabled": True,
-            }
-        
-        if self.plan == SubscriptionPlan.FREE.value:
-            return {
-                "max_quality": "720p",
-                "max_concurrent_streams": 1,
-                "max_stream_duration_hours": 1,
-                "support_response_hours": 72,
-                "support_channels": ["email"],
-                "chat_filter": False,
-                "oauth_enabled": False,
-                "analytics_enabled": False,
-            }
-        elif self.plan == SubscriptionPlan.PRO.value:
-            return {
-                "max_quality": "1080p",
-                "max_concurrent_streams": 10,
-                "max_stream_duration_hours": None,  # Unlimited
-                "support_response_hours": 24,
-                "support_channels": ["email", "chat"],
-                "chat_filter": False,
-                "oauth_enabled": False,
-                "analytics_enabled": False,
-            }
-        elif self.plan == SubscriptionPlan.ENTERPRISE.value:
-            return {
-                "max_quality": "4K",
-                "max_concurrent_streams": None,  # Unlimited
-                "max_stream_duration_hours": None,  # Unlimited
-                "support_response_hours": 0,  # 24/7
-                "support_channels": ["email", "chat"],
-                "chat_filter": True,
-                "oauth_enabled": True,
-                "analytics_enabled": True,
-            }
-        return {}
+            return PLAN_LIMITS["unlimited"].copy()
+        return PLAN_LIMITS.get(self.plan, {}).copy()
 
 
 class TransactionType(str, Enum):
@@ -220,4 +221,24 @@ class Transaction(Base):
     # Relationships
     subscription: Mapped["Subscription"] = relationship(
         "Subscription", back_populates="transactions"
+    )
+
+
+class WebhookEvent(Base):
+    """Tracks processed Stripe webhook events for deduplication"""
+
+    __tablename__ = "webhook_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+        nullable=False,
+    )
+    stripe_event_id: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
     )

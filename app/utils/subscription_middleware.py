@@ -11,7 +11,7 @@ from app.config.database.session import get_db
 from app.services.payment_service import PaymentService
 from app.services.auth_service import AuthService
 from app.models.user_models import User
-from app.models.payment_models import Subscription, SubscriptionPlan
+from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
 from app.config.logger_config import get_logger
 
 logger = get_logger("SubscriptionMiddleware")
@@ -39,7 +39,12 @@ class SubscriptionGuard:
         subscription = await PaymentService.get_user_subscription(user, db)
 
         if not subscription:
-            # Create free trial subscription
+            if user.has_used_free_trial:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your 14-day free trial has expired. Please upgrade to a paid plan.",
+                )
+            # Create free trial subscription (first time only)
             subscription = await PaymentService.create_free_subscription(user, db)
 
         return user, subscription
@@ -58,18 +63,35 @@ class SubscriptionGuard:
             )
 
     @staticmethod
-    async def check_trial_expired(subscription: Subscription) -> None:
-        """Check if trial period has expired"""
+    async def check_trial_expired(
+        subscription: Subscription, db: AsyncSession | None = None
+    ) -> None:
+        """Check if trial period has expired.
+        When the 14-day free trial expires, the subscription is permanently
+        marked as expired and the user can never get a free trial again.
+        """
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         if subscription.is_trial() and subscription.trial_end:
             if datetime.utcnow() > subscription.trial_end:
+                # Permanently expire the free trial in the DB
+                subscription.status = SubscriptionStatus.EXPIRED.value
+                subscription.user.has_used_free_trial = True
+                if db:
+                    await db.commit()
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Your free trial has expired. Please upgrade to continue.",
+                    detail="Your 14-day free trial has expired. Please upgrade to a paid plan to continue.",
                 )
+
+        # Also block if status is already expired
+        if subscription.status == SubscriptionStatus.EXPIRED.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your 14-day free trial has expired. Please upgrade to a paid plan to continue.",
+            )
 
     @staticmethod
     async def check_stream_quality(
@@ -199,7 +221,7 @@ async def require_active_subscription(
     """
     user, subscription = await SubscriptionGuard.get_user_with_subscription(request, db)
     await SubscriptionGuard.check_subscription_active(user, subscription)
-    await SubscriptionGuard.check_trial_expired(subscription)
+    await SubscriptionGuard.check_trial_expired(subscription, db)
     return user, subscription
 
 
@@ -211,7 +233,7 @@ async def require_paid_subscription(
     """
     user, subscription = await SubscriptionGuard.get_user_with_subscription(request, db)
     await SubscriptionGuard.check_subscription_active(user, subscription)
-    await SubscriptionGuard.check_trial_expired(subscription)
+    await SubscriptionGuard.check_trial_expired(subscription, db)
     await SubscriptionGuard.require_paid_plan(subscription)
     return user, subscription
 
@@ -224,6 +246,6 @@ async def require_enterprise_subscription(
     """
     user, subscription = await SubscriptionGuard.get_user_with_subscription(request, db)
     await SubscriptionGuard.check_subscription_active(user, subscription)
-    await SubscriptionGuard.check_trial_expired(subscription)
+    await SubscriptionGuard.check_trial_expired(subscription, db)
     await SubscriptionGuard.require_enterprise_plan(subscription)
     return user, subscription

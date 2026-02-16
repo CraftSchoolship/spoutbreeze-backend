@@ -14,6 +14,7 @@ from app.models.bbb_schemas import (
     StreamConfig,
 )
 from app.config.settings import get_settings
+from app.config.redis_config import cache
 from app.services.bbb_service import BBBService
 from app.services.chat_gateway_client import chat_gateway_client
 from app.services.payment_service import PaymentService
@@ -22,10 +23,86 @@ from app.models.user_models import User
 
 logger = logging.getLogger("BroadcasterService")
 
-# Simple in-memory counters (NOT persistent, single-process only)
-_user_streams: dict[str, set[str]] = defaultdict(set)
-_stream_to_user: dict[str, str] = {}
-_stream_platforms: dict[str, str] = {}
+_STREAM_TTL = 86400  # 24 hours
+
+
+class StreamTracker:
+    """Track active streams using Redis with in-memory fallback"""
+
+    # In-memory fallback (used when Redis is unavailable)
+    _fallback_user_streams: dict[str, set[str]] = defaultdict(set)
+    _fallback_stream_to_user: dict[str, str] = {}
+    _fallback_stream_platforms: dict[str, str] = {}
+
+    @staticmethod
+    async def add_stream(user_id: str, stream_id: str, platform: str | None = None) -> None:
+        """Register a new active stream"""
+        try:
+            if cache.redis_client:
+                await cache.sadd(f"streams:user:{user_id}", stream_id)
+                await cache.expire(f"streams:user:{user_id}", _STREAM_TTL)
+                await cache.set(f"streams:stream_to_user:{stream_id}", user_id, ttl=_STREAM_TTL)
+                if platform:
+                    await cache.set(f"streams:platform:{stream_id}", platform, ttl=_STREAM_TTL)
+                return
+        except Exception as e:
+            logger.warning(f"Redis stream tracking failed, using fallback: {e}")
+
+        # Fallback to in-memory
+        StreamTracker._fallback_user_streams[user_id].add(stream_id)
+        StreamTracker._fallback_stream_to_user[stream_id] = user_id
+        if platform:
+            StreamTracker._fallback_stream_platforms[stream_id] = platform
+
+    @staticmethod
+    async def remove_stream(stream_id: str) -> tuple[str | None, str | None]:
+        """Remove a stream, returns (user_id, platform)"""
+        user_id = None
+        platform = None
+
+        try:
+            if cache.redis_client:
+                raw_user = await cache.get(f"streams:stream_to_user:{stream_id}")
+                user_id = raw_user.decode() if isinstance(raw_user, bytes) else raw_user if isinstance(raw_user, str) else None
+                raw_platform = await cache.get(f"streams:platform:{stream_id}")
+                platform = raw_platform.decode() if isinstance(raw_platform, bytes) else raw_platform if isinstance(raw_platform, str) else None
+
+                if user_id:
+                    await cache.srem(f"streams:user:{user_id}", stream_id)
+                await cache.delete(f"streams:stream_to_user:{stream_id}")
+                await cache.delete(f"streams:platform:{stream_id}")
+                return user_id, platform
+        except Exception as e:
+            logger.warning(f"Redis stream removal failed, using fallback: {e}")
+
+        # Fallback
+        user_id = StreamTracker._fallback_stream_to_user.pop(stream_id, None)
+        platform = StreamTracker._fallback_stream_platforms.pop(stream_id, None)
+        if user_id and stream_id in StreamTracker._fallback_user_streams.get(user_id, set()):
+            StreamTracker._fallback_user_streams[user_id].discard(stream_id)
+            if not StreamTracker._fallback_user_streams[user_id]:
+                del StreamTracker._fallback_user_streams[user_id]
+        return user_id, platform
+
+    @staticmethod
+    async def get_active_stream_count(user_id: str) -> int:
+        """Get count of active streams for a user"""
+        try:
+            if cache.redis_client:
+                return await cache.scard(f"streams:user:{user_id}")
+        except Exception as e:
+            logger.warning(f"Redis stream count failed, using fallback: {e}")
+        return len(StreamTracker._fallback_user_streams.get(user_id, set()))
+
+    @staticmethod
+    async def get_user_streams(user_id: str) -> set[str]:
+        """Get set of active stream IDs for a user"""
+        try:
+            if cache.redis_client:
+                return await cache.smembers(f"streams:user:{user_id}")
+        except Exception as e:
+            logger.warning(f"Redis stream members failed, using fallback: {e}")
+        return StreamTracker._fallback_user_streams.get(user_id, set()).copy()
 
 # Quality order helper
 _QUALITY_ORDER: dict[str, int] = {
@@ -96,8 +173,8 @@ class BroadcasterService:
                 max_quality,
             )
 
-            # Concurrent stream check via in-memory counter
-            active_stream_count = len(_user_streams[user_id])
+            # Concurrent stream check via StreamTracker
+            active_stream_count = await StreamTracker.get_active_stream_count(user_id)
             if (
                 max_concurrent_streams is not None
                 and active_stream_count >= max_concurrent_streams
@@ -167,10 +244,6 @@ class BroadcasterService:
                     status_code=502, detail="Broadcaster response missing stream_id"
                 )
 
-            # Track stream in memory
-            _user_streams[user_id].add(stream_id)
-            _stream_to_user[stream_id] = user_id
-
             platform_lower = platform.lower()
             platform_connected = None
 
@@ -187,9 +260,8 @@ class BroadcasterService:
                 except Exception as e:
                     logger.error(f"YouTube connect failed: {e}")
 
-            # Track which platform for this stream
-            if platform_connected:
-                _stream_platforms[stream_id] = platform_connected
+            # Track stream (after platform connection so platform is tracked too)
+            await StreamTracker.add_stream(user_id, stream_id, platform_connected)
 
             return {
                 "status": data.get("status", "running"),
@@ -244,9 +316,8 @@ class BroadcasterService:
             logger.error(f"Stop failed: {e}")
             raise HTTPException(status_code=500, detail=f"Stop failed: {str(e)}")
 
-        # Get user_id and platform before cleanup
-        user_id = _stream_to_user.get(stream_id)
-        platform = _stream_platforms.get(stream_id)
+        # Remove stream from tracker and get associated user/platform
+        user_id, platform = await StreamTracker.remove_stream(stream_id)
 
         # Disconnect platform chat
         if user_id and platform:
@@ -256,17 +327,8 @@ class BroadcasterService:
                     await chat_gateway_client.disconnect_twitch(user_id)
                 elif platform == "youtube":
                     await chat_gateway_client.disconnect_youtube(user_id)
-                logger.info(f"[Broadcaster] ✅ {platform.capitalize()} disconnected")
+                logger.info(f"[Broadcaster] {platform.capitalize()} disconnected")
             except Exception as e:
                 logger.error(f"[Broadcaster] Failed to disconnect {platform}: {e}")
-
-        # In-memory cleanup
-        _stream_to_user.pop(stream_id, None)
-        _stream_platforms.pop(stream_id, None)
-
-        if user_id and stream_id in _user_streams[user_id]:
-            _user_streams[user_id].remove(stream_id)
-            if not _user_streams[user_id]:
-                del _user_streams[user_id]
 
         return {"message": "Stream stopped", "stream_id": stream_id}

@@ -151,6 +151,11 @@ async def get_subscription(
     subscription = await PaymentService.get_user_subscription(user, db)
 
     if not subscription:
+        if user.has_used_free_trial:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your 14-day free trial has expired. Please upgrade to a paid plan.",
+            )
         # Create free trial subscription if user doesn't have one
         subscription = await PaymentService.create_free_subscription(user, db)
 
@@ -237,6 +242,7 @@ async def stripe_webhook(
     # Handle the event
     try:
         await PaymentService.handle_webhook_event(
+            event_id=event["id"],
             event_type=event["type"],
             data=event["data"],
             db=db,
@@ -257,7 +263,9 @@ async def get_transactions(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Get user's payment transaction history
+    Get user's payment transaction history.
+    Syncs invoices from Stripe on each request to ensure completeness
+    (webhooks may be absent or delayed).
     """
     try:
         subscription = await PaymentService.get_user_subscription(user, db)
@@ -265,7 +273,13 @@ async def get_transactions(
         if not subscription:
             return []
 
-        # Transactions are loaded via relationship
+        # Sync transactions from Stripe invoices (idempotent — skips duplicates)
+        try:
+            await PaymentService.sync_transactions_from_stripe(subscription, db)
+        except Exception as e:
+            logger.warning(f"Transaction sync from Stripe skipped: {e}")
+
+        # Reload transactions after potential sync
         await db.refresh(subscription, ["transactions"])
         return subscription.transactions
     except Exception as e:
@@ -273,6 +287,23 @@ async def get_transactions(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch transactions",
+        )
+
+
+@router.get("/usage")
+async def get_usage_stats(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current usage statistics"""
+    try:
+        stats = await PaymentService.get_usage_stats(user, db)
+        return stats
+    except Exception as e:
+        logger.error(f"Error fetching usage stats: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch usage stats",
         )
 
 
@@ -295,6 +326,11 @@ async def get_current_limits(
     subscription = result.unique().scalar_one_or_none()
 
     if not subscription:
+        if user.has_used_free_trial:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your 14-day free trial has expired. Please upgrade to a paid plan.",
+            )
         subscription = await PaymentService.create_free_subscription(user, db)
         # Refresh to load the user relationship
         await db.refresh(subscription, ["user"])
