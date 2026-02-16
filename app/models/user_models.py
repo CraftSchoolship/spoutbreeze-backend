@@ -43,6 +43,7 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     unlimited_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    has_used_free_trial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_resolution: Mapped[Optional[str]] = mapped_column(
         String, nullable=True
     )

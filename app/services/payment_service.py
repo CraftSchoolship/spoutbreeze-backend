@@ -19,6 +19,8 @@ from app.models.payment_models import (
     SubscriptionPlan,
     SubscriptionStatus,
     TransactionType,
+    WebhookEvent,
+    PLAN_LIMITS,
 )
 from app.models.user_models import User
 from app.models.payment_schemas import (
@@ -87,6 +89,28 @@ class PaymentService:
                 select(Subscription).where(Subscription.user_id == user.id)
             )
             existing_subscription = result.scalar_one_or_none()
+
+            # Validate price_id against configured plans
+            valid_price_ids = {
+                pid for pid in [
+                    settings.stripe_free_price_id,
+                    settings.stripe_pro_price_id,
+                    settings.stripe_enterprise_price_id,
+                ]
+                if pid  # skip empty strings
+            }
+            if price_id not in valid_price_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid price ID. Please select a valid plan.",
+                )
+
+            # Block free plan checkout if user already used their one-time trial
+            if price_id == settings.stripe_free_price_id and user.has_used_free_trial:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You have already used your 14-day free trial. Please select a paid plan.",
+                )
 
             # Create checkout session
             checkout_params = {
@@ -282,8 +306,17 @@ class PaymentService:
 
     @staticmethod
     async def create_free_subscription(user: User, db: AsyncSession) -> Subscription:
-        """Create a free trial subscription for a new user"""
+        """Create a free trial subscription for a new user.
+        The free trial lasts 14 days and can never be used again.
+        """
         try:
+            # Block if user has already used their one-time free trial
+            if user.has_used_free_trial:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="You have already used your 14-day free trial. Please upgrade to a paid plan.",
+                )
+
             # Get or create Stripe customer
             customer_id = await PaymentService.get_or_create_customer(user, db)
 
@@ -302,6 +335,9 @@ class PaymentService:
                 current_period_end=trial_end,
             )
 
+            # Mark user as having used the free trial (one-time, permanent)
+            user.has_used_free_trial = True
+
             db.add(subscription)
             await db.commit()
             await db.refresh(subscription)
@@ -309,6 +345,8 @@ class PaymentService:
             logger.info(f"Created free trial subscription for user {user.id}")
             return subscription
 
+        except HTTPException:
+            raise
         except Exception as e:
             await db.rollback()
             logger.error(f"Failed to create free subscription: {str(e)}")
@@ -323,7 +361,12 @@ class PaymentService:
         cancel_immediately: bool,
         db: AsyncSession,
     ) -> Subscription:
-        """Cancel user's subscription"""
+        """Cancel user's subscription at the end of the current billing period.
+
+        No refund is issued — the user keeps access until current_period_end.
+        The `cancel_immediately` parameter is accepted for API compatibility
+        but is always treated as False.
+        """
         try:
             subscription = await PaymentService.get_user_subscription(user, db)
 
@@ -339,22 +382,17 @@ class PaymentService:
                     detail="Cannot cancel free plan",
                 )
 
-            # Cancel in Stripe
+            # Always cancel at period end — no refund, access continues until expiry
             if subscription.stripe_subscription_id:
-                if cancel_immediately:
-                    stripe.Subscription.delete(subscription.stripe_subscription_id)
-                    subscription.status = SubscriptionStatus.CANCELED.value
-                    subscription.canceled_at = datetime.utcnow()
-                else:
-                    stripe.Subscription.modify(
-                        subscription.stripe_subscription_id, cancel_at_period_end=True
-                    )
-                    subscription.cancel_at_period_end = True
+                stripe.Subscription.modify(
+                    subscription.stripe_subscription_id, cancel_at_period_end=True
+                )
+                subscription.cancel_at_period_end = True
 
             await db.commit()
             await db.refresh(subscription)
 
-            logger.info(f"Canceled subscription for user {user.id}")
+            logger.info(f"Subscription for user {user.id} set to cancel at period end")
             return subscription
 
         except stripe.error.StripeError as e:
@@ -366,12 +404,21 @@ class PaymentService:
 
     @staticmethod
     async def handle_webhook_event(
+        event_id: str,
         event_type: str,
         data: Dict[str, Any],
         db: AsyncSession,
     ) -> None:
         """Handle Stripe webhook events"""
         try:
+            # Deduplication: skip if already processed
+            existing = await db.execute(
+                select(WebhookEvent).where(WebhookEvent.stripe_event_id == event_id)
+            )
+            if existing.scalar_one_or_none():
+                logger.info(f"Skipping duplicate webhook event: {event_id}")
+                return
+
             if event_type == "checkout.session.completed":
                 await PaymentService._handle_checkout_completed(data, db)
             elif event_type == "customer.subscription.created":
@@ -384,8 +431,18 @@ class PaymentService:
                 await PaymentService._handle_payment_succeeded(data, db)
             elif event_type == "invoice.payment_failed":
                 await PaymentService._handle_payment_failed(data, db)
+            elif event_type == "charge.refunded":
+                await PaymentService._handle_charge_refunded(data, db)
             else:
                 logger.info(f"Unhandled webhook event: {event_type}")
+
+            # Record processed event
+            webhook_record = WebhookEvent(
+                stripe_event_id=event_id,
+                event_type=event_type,
+            )
+            db.add(webhook_record)
+            await db.commit()
 
         except Exception as e:
             logger.error(f"Error handling webhook event {event_type}: {str(e)}")
@@ -652,6 +709,45 @@ class PaymentService:
         logger.warning(f"Payment failed for subscription {subscription_id}")
 
     @staticmethod
+    async def _handle_charge_refunded(data: Dict[str, Any], db: AsyncSession) -> None:
+        """Handle charge.refunded event"""
+        charge = data.get("object", {})
+        payment_intent_id = charge.get("payment_intent")
+        refund_amount = charge.get("amount_refunded", 0) / 100
+
+        if not payment_intent_id:
+            return
+
+        # Find the related transaction
+        result = await db.execute(
+            select(Transaction).where(
+                Transaction.stripe_payment_intent_id == payment_intent_id
+            )
+        )
+        original_transaction = result.scalar_one_or_none()
+
+        if not original_transaction:
+            logger.warning(f"No transaction found for refund: {payment_intent_id}")
+            return
+
+        # Create refund transaction record
+        refund_transaction = Transaction(
+            subscription_id=original_transaction.subscription_id,
+            stripe_payment_intent_id=f"refund_{payment_intent_id}_{charge.get('id', '')}",
+            stripe_invoice_id=original_transaction.stripe_invoice_id,
+            amount=refund_amount,
+            currency=charge.get("currency", "usd"),
+            transaction_type=TransactionType.REFUND.value,
+            status="refunded",
+            description=f"Refund for {original_transaction.description or 'payment'}",
+            receipt_url=charge.get("receipt_url"),
+        )
+
+        db.add(refund_transaction)
+        await db.commit()
+        logger.info(f"Refund recorded for payment intent {payment_intent_id}")
+
+    @staticmethod
     def _get_plan_from_price_id(price_id: str) -> str:
         """Determine plan type from Stripe price ID"""
         if price_id == settings.stripe_pro_price_id:
@@ -667,16 +763,7 @@ class PaymentService:
         plans = []
 
         # Basic Plan (formerly Free Plan)
-        basic_limits = PlanLimits(
-            max_quality="720p",
-            max_concurrent_streams=1,
-            max_stream_duration_hours=1,
-            support_response_hours=72,
-            support_channels=["email"],
-            chat_filter=False,
-            oauth_enabled=False,
-            analytics_enabled=False,
-        )
+        basic_limits = PlanLimits(**PLAN_LIMITS[SubscriptionPlan.FREE.value])
 
         plans.append(
             PlanInfo(
@@ -700,16 +787,7 @@ class PaymentService:
         )
 
         # Pro Plan
-        pro_limits = PlanLimits(
-            max_quality="1080p",
-            max_concurrent_streams=10,
-            max_stream_duration_hours=None,
-            support_response_hours=24,
-            support_channels=["email", "chat"],
-            chat_filter=False,
-            oauth_enabled=False,
-            analytics_enabled=False,
-        )
+        pro_limits = PlanLimits(**PLAN_LIMITS[SubscriptionPlan.PRO.value])
 
         plans.append(
             PlanInfo(
@@ -733,16 +811,7 @@ class PaymentService:
         )
 
         # Enterprise Plan
-        enterprise_limits = PlanLimits(
-            max_quality="4K",
-            max_concurrent_streams=None,
-            max_stream_duration_hours=None,
-            support_response_hours=0,
-            support_channels=["email", "chat"],
-            chat_filter=True,
-            oauth_enabled=True,
-            analytics_enabled=True,
-        )
+        enterprise_limits = PlanLimits(**PLAN_LIMITS[SubscriptionPlan.ENTERPRISE.value])
 
         plans.append(
             PlanInfo(
@@ -769,3 +838,141 @@ class PaymentService:
         )
 
         return plans
+
+    @staticmethod
+    async def get_usage_stats(user: User, db: AsyncSession) -> dict:
+        """Get current usage statistics for the user"""
+        from app.services.broadcaster_service import StreamTracker
+
+        subscription = await PaymentService.get_user_subscription(user, db)
+        if not subscription:
+            if user.has_used_free_trial:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your 14-day free trial has expired. Please upgrade to a paid plan.",
+                )
+            subscription = await PaymentService.create_free_subscription(user, db)
+
+        limits = subscription.get_plan_limits()
+        active_streams = await StreamTracker.get_active_stream_count(str(user.id))
+
+        # Calculate trial days remaining
+        trial_days_remaining = None
+        if subscription.trial_end:
+            remaining = (subscription.trial_end - datetime.utcnow()).days
+            trial_days_remaining = max(0, remaining)
+
+        return {
+            "active_streams": active_streams,
+            "max_concurrent_streams": limits.get("max_concurrent_streams"),
+            "current_plan": subscription.plan,
+            "plan_status": subscription.status,
+            "trial_days_remaining": trial_days_remaining,
+            "max_quality": limits.get("max_quality", "720p"),
+        }
+
+    @staticmethod
+    async def sync_transactions_from_stripe(
+        subscription: Subscription, db: AsyncSession
+    ) -> list[Transaction]:
+        """
+        Fetch paid invoices from Stripe for this subscription's customer and
+        upsert them into the local transactions table.  This ensures payment
+        history is available even when webhooks are not configured or events
+        were missed.
+        """
+        if not subscription.stripe_customer_id:
+            return []
+
+        try:
+            stripe_invoices = stripe.Invoice.list(
+                customer=subscription.stripe_customer_id,
+                limit=100,
+            )
+        except stripe.error.StripeError as e:
+            logger.error(f"Failed to list Stripe invoices: {e}")
+            return []
+
+        items = (
+            stripe_invoices.get("data", [])
+            if isinstance(stripe_invoices, dict)
+            else stripe_invoices.data
+        )
+
+        if not items:
+            return []
+
+        # Fetch existing payment_intent IDs so we don't duplicate
+        existing_result = await db.execute(
+            select(Transaction.stripe_payment_intent_id).where(
+                Transaction.subscription_id == subscription.id
+            )
+        )
+        existing_pi_ids: set[str] = {
+            row[0] for row in existing_result.all() if row[0]
+        }
+
+        new_transactions: list[Transaction] = []
+
+        for inv in items:
+            payment_intent_id = inv.get("payment_intent")
+            invoice_id = inv.get("id", "")
+            amount_paid = inv.get("amount_paid", 0)
+
+            # Skip zero-dollar invoices (trial starts) and already-imported ones
+            if amount_paid == 0:
+                continue
+
+            # Build a unique key — use payment_intent when available, else invoice id
+            pi_key = payment_intent_id or f"inv_{invoice_id}"
+            if pi_key in existing_pi_ids:
+                continue
+
+            inv_status = inv.get("status", "")
+            if inv_status == "paid":
+                txn_type = TransactionType.PAYMENT.value
+                txn_status = "succeeded"
+            elif inv_status in ("uncollectible", "void"):
+                txn_type = TransactionType.FAILED.value
+                txn_status = "failed"
+            else:
+                continue  # skip drafts / open invoices
+
+            # Determine plan from the invoice line items
+            description = f"Payment for {subscription.plan} plan"
+            lines = inv.get("lines", {})
+            line_data = (
+                lines.get("data", [])
+                if isinstance(lines, dict)
+                else lines.data if hasattr(lines, "data") else []
+            )
+            if line_data:
+                first_line = line_data[0]
+                line_desc = first_line.get("description", "")
+                if line_desc:
+                    description = line_desc
+
+            txn = Transaction(
+                subscription_id=subscription.id,
+                stripe_payment_intent_id=pi_key,
+                stripe_invoice_id=invoice_id,
+                amount=amount_paid / 100,  # cents → dollars
+                currency=inv.get("currency", "usd"),
+                transaction_type=txn_type,
+                status=txn_status,
+                description=description,
+                receipt_url=inv.get("hosted_invoice_url"),
+                created_at=datetime.fromtimestamp(inv.get("created", 0)),
+            )
+            db.add(txn)
+            new_transactions.append(txn)
+            existing_pi_ids.add(pi_key)
+
+        if new_transactions:
+            await db.commit()
+            logger.info(
+                f"Synced {len(new_transactions)} transactions from Stripe "
+                f"for customer {subscription.stripe_customer_id}"
+            )
+
+        return new_transactions
