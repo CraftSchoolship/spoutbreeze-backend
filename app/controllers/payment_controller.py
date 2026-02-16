@@ -168,6 +168,9 @@ async def get_subscription(
     except Exception as e:
         logger.warning(f"Subscription reconcile skipped: {str(e)}")
 
+    # Populate user relationship physically to avoid lazy load error
+    subscription.user = user
+
     # Add plan limits to response (computed from current plan)
     limits = subscription.get_plan_limits()
 
