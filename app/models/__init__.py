@@ -4,6 +4,7 @@ from app.models.channel.channels_model import Channel
 from app.models.event.event_models import Event
 from app.models.stream_models import RtmpEndpoint
 from app.models.bbb_models import BbbMeeting
+from app.models.connection_model import Connection
 
 __all__ = [
     "Base",
@@ -13,4 +14,5 @@ __all__ = [
     "user_event_association",
     "RtmpEndpoint",
     "BbbMeeting",
+    "Connection",
 ]

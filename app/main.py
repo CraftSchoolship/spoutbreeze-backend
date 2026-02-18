@@ -12,8 +12,7 @@ from app.services.bbb_service import BBBService
 from app.services.stream_cleanup_service import StreamCleanupService
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import user_models, payment_models, youtube_models  # noqa: F401
-from app.models.twitch import twitch_models  # noqa: F401
+from app.models import user_models, payment_models, connection_model  # noqa: F401
 
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router

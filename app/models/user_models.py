@@ -13,7 +13,7 @@ from app.models.stream_models import RtmpEndpoint
 from app.models.event.event_models import Event
 
 if TYPE_CHECKING:
-    from app.models.twitch.twitch_models import TwitchToken
+    from app.models.connection_model import Connection
     from app.models.payment_models import Subscription
 
 
@@ -48,7 +48,7 @@ class User(Base):
         String, nullable=True
     )
 
-    # Relationships – note the use of fully qualified names if needed or move to __init__.py import order
+    # Relationships
     rtmp_endpoints: Mapped[list[RtmpEndpoint]] = relationship(
         "RtmpEndpoint", back_populates="user", cascade="all, delete-orphan"
     )
@@ -72,8 +72,8 @@ class User(Base):
         cascade_backrefs=False,
         passive_deletes=True,
     )
-    twitch_tokens: Mapped[List["TwitchToken"]] = relationship(
-        "TwitchToken", back_populates="user", cascade="all, delete-orphan"
+    connections: Mapped[List["Connection"]] = relationship(
+        "Connection", back_populates="user", cascade="all, delete-orphan"
     )
     subscription: Mapped[Optional["Subscription"]] = relationship(
         "Subscription",
@@ -111,13 +111,11 @@ class User(Base):
         """Check if user has moderator role"""
         return self.has_role("moderator")
 
-    def get_active_twitch_token(self) -> Optional["TwitchToken"]:
-        """Get the user's active Twitch token"""
-        from datetime import datetime
-
-        for token in self.twitch_tokens:
-            if token.is_active and token.expires_at > datetime.now():
-                return token
+    def get_active_connection(self, provider: str) -> Optional["Connection"]:
+        """Get the user's active connection for a given provider"""
+        for conn in self.connections:
+            if conn.provider == provider and conn.is_active and not conn.is_expired:
+                return conn
         return None
 
     def __repr__(self) -> str:

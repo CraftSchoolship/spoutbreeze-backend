@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Environment settings
     env: str = "development"
 
+    # Token encryption
+    token_encryption_key: str  # Fernet key for encrypting OAuth tokens at rest
+
     # SSL settings
     ssl_cert_file: str = "certs/keycloak.pem"
     ssl_verify: bool = True

@@ -3,8 +3,10 @@ import ssl
 from app.config.settings import get_settings
 from urllib.parse import urlencode
 import secrets
+import logging
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 class TwitchAuth:
@@ -77,6 +79,45 @@ class TwitchAuth:
             )
             response.raise_for_status()
             return response.json()
+
+    async def refresh_access_token(self, refresh_token: str) -> dict:
+        """Refresh the access token using a refresh token.
+
+        Twitch refresh tokens don't expire but are single-use — each refresh
+        returns a new refresh_token that must be stored.
+
+        Returns:
+            dict with access_token, refresh_token, expires_in, token_type, scope
+        """
+        ssl_context = self._get_public_ssl_context()
+
+        try:
+            async with httpx.AsyncClient(verify=ssl_context, timeout=30.0) as client:
+                response = await client.post(
+                    "https://id.twitch.tv/oauth2/token",
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "refresh_token": refresh_token,
+                        "grant_type": "refresh_token",
+                    },
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "User-Agent": "SpoutBreeze/1.0",
+                    },
+                )
+                response.raise_for_status()
+                token_data = response.json()
+                logger.info("[TwitchAuth] Access token refreshed successfully")
+                return token_data
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"[TwitchAuth] Token refresh failed: {e.response.status_code} - {e.response.text}"
+            )
+            raise
+        except Exception as e:
+            logger.error(f"[TwitchAuth] Token refresh error: {e}")
+            raise
 
 
 # Keep the old function for backward compatibility but mark it as deprecated
