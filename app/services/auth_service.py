@@ -506,3 +506,70 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to update user role: {str(e)}",
             )
+
+    def delete_user(self, user_id: str) -> bool:
+        """
+        Permanently delete a user from Keycloak using the Admin REST API.
+
+        Args:
+            user_id: The Keycloak user ID (sub claim)
+
+        Returns:
+            True if the user was deleted successfully
+
+        Raises:
+            HTTPException: If the deletion fails
+        """
+        try:
+            logger.info(f"Deleting user from Keycloak: {user_id}")
+
+            admin_token = self._get_admin_token()
+
+            delete_url = (
+                f"{self.settings.keycloak_server_url}/admin/realms/"
+                f"{self.settings.keycloak_realm}/users/{user_id}"
+            )
+
+            headers = {
+                "Authorization": f"Bearer {admin_token}",
+                "Content-Type": "application/json",
+            }
+
+            response = requests.delete(
+                delete_url,
+                headers=headers,
+                timeout=10,
+                verify=self.ssl_verify,
+            )
+            response.raise_for_status()
+
+            logger.info(
+                f"User {user_id} deleted successfully from Keycloak"
+            )
+            return True
+
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout while deleting user {user_id} from Keycloak")
+            raise HTTPException(
+                status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                detail="Request timeout while deleting user from Keycloak",
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                f"Failed to delete user {user_id} from Keycloak: {str(e)}"
+            )
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Response status: {e.response.status_code}")
+                logger.error(f"Response content: {e.response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete user from Keycloak: {str(e)}",
+            )
+        except Exception as e:
+            logger.error(
+                f"Unexpected error deleting user {user_id} from Keycloak: {str(e)}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="An unexpected error occurred while deleting user from Keycloak",
+            )

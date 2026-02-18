@@ -853,6 +853,9 @@ class PaymentService:
                 )
             subscription = await PaymentService.create_free_subscription(user, db)
 
+        # Populate user relationship physically to avoid lazy load error
+        subscription.user = user
+
         limits = subscription.get_plan_limits()
         active_streams = await StreamTracker.get_active_stream_count(str(user.id))
 

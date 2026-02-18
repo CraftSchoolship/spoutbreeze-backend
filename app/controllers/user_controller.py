@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Path
 from typing import List
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -497,4 +497,103 @@ async def update_user_resolution(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update resolution setting",
+        )
+
+
+@router.delete("/me")
+async def delete_account(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permanently delete the current user's account.
+
+    This will:
+    1. Cancel any active Stripe subscription immediately
+    2. Delete the user from Keycloak
+    3. Delete the user and all related data from the database (cascade)
+    4. Invalidate all user caches
+    5. Clear authentication cookies
+    """
+    request_id = str(uuid.uuid4())
+    logger.info(
+        f"[{request_id}] Starting account deletion for user: {current_user.username} (ID: {current_user.id})"
+    )
+
+    try:
+        # Step 1: Cancel any active Stripe subscription immediately
+        try:
+            from app.services.payment_service import PaymentService
+
+            subscription = await PaymentService.get_user_subscription(current_user, db)
+            if subscription and subscription.stripe_subscription_id:
+                import stripe
+
+                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                logger.info(
+                    f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}"
+                )
+        except Exception as e:
+            # Log but don't fail — subscription cleanup is best-effort
+            logger.warning(
+                f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}"
+            )
+
+        # Step 2: Delete user from Keycloak
+        auth_service.delete_user(current_user.keycloak_id)
+        logger.info(
+            f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak"
+        )
+
+        # Step 3: Delete user from database (cascade handles all related records)
+        # Re-fetch the user to get a persistent instance attached to this session
+        result = await db.execute(
+            select(User).where(User.id == current_user.id)
+        )
+        user_to_delete = result.scalar_one_or_none()
+
+        if user_to_delete:
+            await db.delete(user_to_delete)
+            await db.commit()
+            logger.info(
+                f"[{request_id}] Deleted user {current_user.id} from database"
+            )
+
+        # Step 4: Invalidate all user caches
+        try:
+            await user_service_cached.invalidate_user_cache(
+                current_user.id, current_user.keycloak_id
+            )
+        except Exception as e:
+            logger.warning(
+                f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}"
+            )
+
+        # Step 5: Clear authentication cookies
+        from app.controllers.auth_controller import clear_auth_cookies
+
+        clear_auth_cookies(response)
+
+        logger.info(
+            f"[{request_id}] Account deletion completed successfully for user: {current_user.username}"
+        )
+
+        return {
+            "message": "Account deleted successfully",
+            "statusCode": 200,
+        }
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(
+            f"[{request_id}] Unexpected error during account deletion: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account. Please try again or contact support.",
         )
