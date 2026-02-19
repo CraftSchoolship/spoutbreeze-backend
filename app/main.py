@@ -1,4 +1,4 @@
-import asyncio
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
@@ -6,10 +6,12 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
 from apscheduler.triggers.cron import CronTrigger  # type: ignore
+from apscheduler.triggers.interval import IntervalTrigger  # type: ignore
 import time
 
 from app.services.bbb_service import BBBService
 from app.services.stream_cleanup_service import StreamCleanupService
+from app.services.token_refresh_service import TokenRefreshService
 
 # Import models to ensure they are registered with SQLAlchemy
 from app.models import user_models, payment_models, connection_model  # noqa: F401
@@ -98,23 +100,49 @@ async def lifespan(app: FastAPI):
         misfire_grace_time=3600,  # 1 hour
         kwargs={"days": 30},
     )
-    scheduler.start()
     logger.info("[Scheduler] BBB meeting cleanup job scheduled")
+
+    # Set up scheduler for stream cleanup (every 5 minutes)
+    async def _stream_cleanup_job():
+        async with SessionLocal() as db:
+            await StreamCleanupService.cleanup_stale_streams(db)
+
+    scheduler.add_job(
+        _stream_cleanup_job,
+        trigger=IntervalTrigger(minutes=5),
+        id="stream_cleanup_job",
+        name="Stream Cleanup Job",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+    logger.info("[Scheduler] Stream cleanup job scheduled (every 5 min)")
+
+    # Set up scheduler for token refresh (every 30 minutes)
+    async def _token_refresh_job():
+        async with SessionLocal() as db:
+            await TokenRefreshService.refresh_expiring_tokens(db)
+
+    scheduler.add_job(
+        _token_refresh_job,
+        trigger=IntervalTrigger(minutes=30),
+        id="token_refresh_job",
+        name="Token Refresh Job",
+        replace_existing=True,
+        misfire_grace_time=600,  # 10 min grace
+    )
+    logger.info("[Scheduler] Token refresh job scheduled (every 30 min)")
+
+    scheduler.start()
 
     logger.info("=== APPLICATION STARTUP COMPLETE ===")
 
     yield  # App is running
 
     logger.info("=== APPLICATION SHUTDOWN ===")
+    scheduler.shutdown(wait=False)
+    logger.info("[Scheduler] Shut down")
     await cache.close()
     logger.info("[cache] Redis cache connection closed")
-
-    # Shutdown: cancel the IRC task
-    # twitch_tasks.cancel()
-    # try:
-    #     await twitch_tasks
-    # except asyncio.CancelledError:
-    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
 
     logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
@@ -242,16 +270,3 @@ app.include_router(payment_router)
 #         logger.info("[Chat] Client disconnected")
 
 
-async def periodic_stream_cleanup():
-    while True:
-        try:
-            async with SessionLocal() as db:
-                await StreamCleanupService.cleanup_stale_streams(db)
-        except Exception as e:
-            logger.error(f"Periodic cleanup error: {e}")
-        await asyncio.sleep(300)  # Run every 5 minutes
-
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(periodic_stream_cleanup())
