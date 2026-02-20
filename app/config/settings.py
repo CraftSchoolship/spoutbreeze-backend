@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     youtube_client_secret: str
     youtube_redirect_uri: str
 
+    # Facebook OAuth settings
+    facebook_app_id: str
+    facebook_app_secret: str
+    facebook_redirect_uri: str
+
     # Database settings
     db_url: str
 

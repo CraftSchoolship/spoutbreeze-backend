@@ -10,7 +10,7 @@ logger = logging.getLogger("InternalAPI")
 
 SHARED_SECRET = os.getenv("CHAT_GATEWAY_SHARED_SECRET", "dev-secret")
 
-VALID_PROVIDERS = {"twitch", "youtube"}
+VALID_PROVIDERS = {"twitch", "youtube", "facebook"}
 
 
 def verify_internal_auth(x_internal_auth: str = Header(None, alias="X-Internal-Auth")):

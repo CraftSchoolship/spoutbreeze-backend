@@ -41,9 +41,21 @@ class ConnectionService:
         auth = YouTubeAuth()
         return await auth.refresh_access_token(refresh_token)
 
+    @staticmethod
+    async def _refresh_facebook(refresh_token: str) -> dict:
+        from app.config.facebook_auth import FacebookAuth
+
+        auth = FacebookAuth()
+        token_data = await auth.refresh_access_token(refresh_token)
+        # Facebook returns a new long-lived token; store it as refresh_token too
+        if "refresh_token" not in token_data:
+            token_data["refresh_token"] = token_data["access_token"]
+        return token_data
+
     _REFRESHERS = {
         "twitch": _refresh_twitch.__func__,
         "youtube": _refresh_youtube.__func__,
+        "facebook": _refresh_facebook.__func__,
     }
 
     # --- Public API ---
