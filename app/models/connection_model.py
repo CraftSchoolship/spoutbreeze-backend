@@ -46,12 +46,14 @@ class Connection(Base):
     # Relationship
     user: Mapped["User"] = relationship("User", back_populates="connections")
 
-    # Partial unique index: one active (non-revoked) connection per provider per user
+    # Partial unique index: one active (non-revoked) connection per provider per user.
+    # Includes provider_user_id so that multiple pages (facebook_page) can coexist.
     __table_args__ = (
         Index(
-            "ix_connections_user_provider_active",
+            "ix_connections_user_provider_active_v2",
             "user_id",
             "provider",
+            text("COALESCE(provider_user_id, '')"),
             unique=True,
             postgresql_where=text("revoked_at IS NULL"),
         ),

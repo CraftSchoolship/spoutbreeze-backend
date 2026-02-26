@@ -8,7 +8,7 @@ settings = get_settings()
 logger = get_logger("FacebookAuth")
 
 # Facebook Graph API version
-GRAPH_API_VERSION = "v21.0"
+GRAPH_API_VERSION = "v25.0"
 GRAPH_BASE = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
 
 
@@ -133,7 +133,10 @@ class FacebookAuth:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
                     f"{GRAPH_BASE}/me/accounts",
-                    params={"access_token": access_token},
+                    params={
+                        "access_token": access_token,
+                        "fields": "id,name,access_token",
+                    },
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -141,3 +144,135 @@ class FacebookAuth:
         except Exception as e:
             logger.error(f"Failed to fetch user pages: {e}")
             raise
+
+    async def create_live_video(
+        self,
+        access_token: str,
+        target_id: str = "me",
+        title: str = "SpoutBreeze Live",
+        privacy: str = "EVERYONE",
+    ) -> dict:
+        """Create a LiveVideo and go live immediately.
+
+        Calls POST /{target_id}/live_videos?status=LIVE_NOW which:
+        - Creates the LiveVideo object
+        - Returns the RTMP URL (replaces manual 'Go Live' button)
+
+        Args:
+            access_token: User or Page access token
+            target_id: 'me' for user profile, or a Page ID
+            title: Stream title
+            privacy: EVERYONE, ALL_FRIENDS, or SELF
+
+        Returns:
+            dict with id (live_video_id), rtmp_url, stream_key
+        """
+        try:
+            params = {
+                "status": "LIVE_NOW",
+                "title": title,
+                "access_token": access_token,
+            }
+            # Privacy only applies to user profiles, not Pages
+            if target_id == "me":
+                params["privacy"] = f'{{"value":"{privacy}"}}'
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{GRAPH_BASE}/{target_id}/live_videos",
+                    params=params,
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                live_video_id = data["id"]
+                stream_url = data.get("secure_stream_url") or data.get("stream_url", "")
+
+                # Parse stream_url into rtmp_url + stream_key
+                rtmp_url, stream_key = self._parse_stream_url(stream_url)
+
+                logger.info(
+                    f"[FacebookAuth] LiveVideo created: {live_video_id} on {target_id}"
+                )
+
+                return {
+                    "live_video_id": live_video_id,
+                    "stream_url": stream_url,
+                    "rtmp_url": rtmp_url,
+                    "stream_key": stream_key,
+                }
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Create live video failed: {e.response.status_code} - {e.response.text}"
+            )
+            raise
+        except Exception as e:
+            logger.error(f"Create live video error: {e}")
+            raise
+
+    async def end_live_video(self, access_token: str, live_video_id: str) -> dict:
+        """End a live broadcast.
+
+        Calls POST /{live_video_id}?end_live_video=true
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{GRAPH_BASE}/{live_video_id}",
+                    params={
+                        "end_live_video": "true",
+                        "access_token": access_token,
+                    },
+                )
+                response.raise_for_status()
+                logger.info(f"[FacebookAuth] LiveVideo ended: {live_video_id}")
+                return response.json()
+        except Exception as e:
+            logger.error(f"End live video failed: {e}")
+            raise
+
+    async def get_live_video_status(
+        self, access_token: str, live_video_id: str
+    ) -> dict:
+        """Get status of a live video.
+
+        Returns:
+            dict with id, status, video (associated video post)
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{GRAPH_BASE}/{live_video_id}",
+                    params={
+                        "fields": "id,status,title,video,permalink_url",
+                        "access_token": access_token,
+                    },
+                )
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            logger.error(f"Get live video status failed: {e}")
+            raise
+
+    @staticmethod
+    def _parse_stream_url(stream_url: str) -> tuple[str, str]:
+        """Parse Facebook stream_url into (rtmp_url, stream_key).
+
+        Input:  rtmps://live-api-s.facebook.com:443/rtmp/KEY?params...
+        Output: ('rtmps://live-api-s.facebook.com:443/rtmp/', 'KEY?params...')
+        """
+        if not stream_url:
+            return ("", "")
+
+        # Find the last '/rtmp/' and split there
+        rtmp_marker = "/rtmp/"
+        idx = stream_url.rfind(rtmp_marker)
+        if idx == -1:
+            # Fallback: return the whole URL as rtmp_url
+            return (stream_url, "")
+
+        split_point = idx + len(rtmp_marker)
+        rtmp_url = stream_url[:split_point]
+        stream_key = stream_url[split_point:]
+        return (rtmp_url, stream_key)
+

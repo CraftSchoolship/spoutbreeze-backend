@@ -56,6 +56,7 @@ class ConnectionService:
         "twitch": _refresh_twitch.__func__,
         "youtube": _refresh_youtube.__func__,
         "facebook": _refresh_facebook.__func__,
+        "facebook_page": _refresh_facebook.__func__,  # Pages use same refresh logic
     }
 
     # --- Public API ---
@@ -85,12 +86,18 @@ class ConnectionService:
         )
 
         # Check for ANY existing connection for this user+provider (regardless of revoked status)
+        # For providers with provider_user_id (e.g. facebook_page), also match by that
+        # so multiple pages don't overwrite each other.
+        conditions = [
+            Connection.user_id == user_id,
+            Connection.provider == provider,
+        ]
+        if provider_user_id is not None:
+            conditions.append(Connection.provider_user_id == provider_user_id)
+
         stmt = (
             select(Connection)
-            .where(
-                Connection.user_id == user_id,
-                Connection.provider == provider,
-            )
+            .where(*conditions)
             .order_by(Connection.created_at.desc())
         )
         result = await db.execute(stmt)
@@ -256,6 +263,95 @@ class ConnectionService:
             f"({result.rowcount} rows)"
         )
         return result.rowcount
+
+    @classmethod
+    async def revoke_all_connections(
+        cls,
+        db: AsyncSession,
+        user_id,
+        provider: str,
+    ) -> int:
+        """Soft-revoke ALL active connections for a user + provider.
+
+        Unlike revoke_connection (which revokes one), this revokes all
+        matching connections (e.g. all facebook_page connections).
+        """
+        stmt = (
+            update(Connection)
+            .where(
+                Connection.user_id == user_id,
+                Connection.provider == provider,
+                Connection.revoked_at.is_(None),
+            )
+            .values(revoked_at=datetime.now())
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        logger.info(
+            f"[{provider}] All connections revoked for user {user_id} "
+            f"({result.rowcount} rows)"
+        )
+        return result.rowcount
+
+    @classmethod
+    async def get_connections_by_provider(
+        cls,
+        db: AsyncSession,
+        user_id,
+        provider: str,
+    ) -> list[Connection]:
+        """Return all active connections for a user + provider."""
+        stmt = (
+            select(Connection)
+            .where(
+                Connection.user_id == user_id,
+                Connection.provider == provider,
+                Connection.revoked_at.is_(None),
+            )
+            .order_by(Connection.created_at.desc())
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    @classmethod
+    async def get_decrypted_token(
+        cls,
+        db: AsyncSession,
+        user_id,
+        provider: str,
+        provider_user_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return decrypted token for a specific connection.
+
+        For providers with provider_user_id (e.g. facebook_page),
+        also filter by that.
+        """
+        conditions = [
+            Connection.user_id == user_id,
+            Connection.provider == provider,
+            Connection.revoked_at.is_(None),
+        ]
+        if provider_user_id is not None:
+            conditions.append(Connection.provider_user_id == provider_user_id)
+
+        stmt = (
+            select(Connection)
+            .where(*conditions)
+            .order_by(Connection.created_at.desc())
+        )
+        result = await db.execute(stmt)
+        connection = result.scalars().first()
+
+        if not connection:
+            return None
+
+        return {
+            "access_token": decrypt_token(connection.access_token),
+            "refresh_token": decrypt_token(connection.refresh_token)
+            if connection.refresh_token
+            else None,
+            "expires_at": connection.expires_at.isoformat(),
+        }
 
     @classmethod
     async def get_connection_status(
