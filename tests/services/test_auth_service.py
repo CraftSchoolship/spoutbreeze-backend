@@ -1,11 +1,13 @@
 import pytest
-from requests.exceptions import HTTPError, Timeout, RequestException
+from unittest.mock import AsyncMock, patch, MagicMock
+import httpx
 
 import app.services.auth_service as auth_module
 from app.services.auth_service import AuthService
 
 
 class Resp:
+    """Mimics httpx.Response for test mocking."""
     def __init__(self, status_code=200, json_data=None, text=""):
         self.status_code = status_code
         self._json = json_data or {}
@@ -13,7 +15,11 @@ class Resp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise HTTPError(response=self)
+            raise httpx.HTTPStatusError(
+                message=f"HTTP {self.status_code}",
+                request=MagicMock(),
+                response=self,
+            )
 
     def json(self):
         return self._json
@@ -149,34 +155,36 @@ def test_get_user_info_failure(make_service):
     assert ei.value.status_code == 401
 
 
-def test_get_admin_token_caches(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_admin_token_caches(monkeypatch, make_service):
     svc, _ = make_service()
     calls = {"count": 0}
 
-    def fake_post(url, data=None, headers=None, verify=None):
+    async def fake_post(self_client, url, **kwargs):
         calls["count"] += 1
         return Resp(200, {"access_token": f"adm{calls['count']}", "expires_in": 60})
 
-    monkeypatch.setattr(auth_module.requests, "post", fake_post)
-    t1 = svc._get_admin_token()
-    t2 = svc._get_admin_token()
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    t1 = await svc._get_admin_token()
+    t2 = await svc._get_admin_token()
     assert t1 == "adm1" and t2 == "adm1"
     assert calls["count"] == 1  # cached on second call
 
 
-def test_update_user_profile_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_update_user_profile_success(monkeypatch, make_service):
     svc, _ = make_service()
-    monkeypatch.setattr(svc, "_get_admin_token", lambda: "ADM")
+    monkeypatch.setattr(svc, "_get_admin_token", AsyncMock(return_value="ADM"))
     captured = {}
 
-    def fake_put(url, json=None, headers=None, timeout=None, verify=None):
+    async def fake_put(self_client, url, **kwargs):
         captured["url"] = url
-        captured["json"] = json
-        captured["headers"] = headers
+        captured["json"] = kwargs.get("json")
+        captured["headers"] = kwargs.get("headers")
         return Resp(204, {})
 
-    monkeypatch.setattr(auth_module.requests, "put", fake_put)
-    ok = svc.update_user_profile(
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
+    ok = await svc.update_user_profile(
         "user-1",
         {
             "first_name": "F",
@@ -196,29 +204,31 @@ def test_update_user_profile_success(monkeypatch, make_service):
     assert "Authorization" in captured["headers"]
 
 
-def test_update_user_profile_timeout(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_update_user_profile_timeout(monkeypatch, make_service):
     svc, _ = make_service()
-    monkeypatch.setattr(svc, "_get_admin_token", lambda: "ADM")
+    monkeypatch.setattr(svc, "_get_admin_token", AsyncMock(return_value="ADM"))
 
-    def fake_put(*a, **k):
-        raise Timeout()
+    async def fake_put(self_client, url, **kwargs):
+        raise httpx.TimeoutException("timed out")
 
-    monkeypatch.setattr(auth_module.requests, "put", fake_put)
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
     with pytest.raises(auth_module.HTTPException) as ei:
-        svc.update_user_profile("user-1", {})
+        await svc.update_user_profile("user-1", {})
     assert ei.value.status_code == 408
 
 
-def test_update_user_profile_request_exception(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_update_user_profile_request_exception(monkeypatch, make_service):
     svc, _ = make_service()
-    monkeypatch.setattr(svc, "_get_admin_token", lambda: "ADM")
+    monkeypatch.setattr(svc, "_get_admin_token", AsyncMock(return_value="ADM"))
 
-    def fake_put(*a, **k):
-        raise HTTPError(response=Resp(400, text="bad"))
+    async def fake_put(self_client, url, **kwargs):
+        return Resp(400, text="bad")
 
-    monkeypatch.setattr(auth_module.requests, "put", fake_put)
+    monkeypatch.setattr(httpx.AsyncClient, "put", fake_put)
     with pytest.raises(auth_module.HTTPException) as ei:
-        svc.update_user_profile("user-1", {})
+        await svc.update_user_profile("user-1", {})
     assert ei.value.status_code == 400
 
 
@@ -243,132 +253,142 @@ def test_health_check(monkeypatch, make_service):
     assert svc.health_check() is False
 
 
-def test_get_client_id_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_client_id_success(monkeypatch, make_service):
     svc, _ = make_service()
 
-    def fake_get(url, headers=None, params=None, verify=None):
-        assert params == {"clientId": "spoutbreezeAPI"}
+    async def fake_get(self_client, url, **kwargs):
+        assert kwargs.get("params") == {"clientId": "spoutbreezeAPI"}
         return Resp(200, [{"id": "cid-1"}])
 
-    monkeypatch.setattr(auth_module.requests, "get", fake_get)
-    out = svc._get_client_id("ADM", "spoutbreezeAPI")
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    out = await svc._get_client_id("ADM", "spoutbreezeAPI")
     assert out == "cid-1"
 
 
-def test_get_client_id_not_found(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_client_id_not_found(monkeypatch, make_service):
     svc, _ = make_service()
 
-    def fake_get(url, headers=None, params=None, verify=None):
+    async def fake_get(self_client, url, **kwargs):
         return Resp(200, [])
 
-    monkeypatch.setattr(auth_module.requests, "get", fake_get)
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     with pytest.raises(ValueError):
-        svc._get_client_id("ADM", "missing")
+        await svc._get_client_id("ADM", "missing")
 
 
-def test_get_client_role_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_client_role_success(monkeypatch, make_service):
     svc, _ = make_service()
 
-    def fake_get(url, headers=None, verify=None):
+    async def fake_get(self_client, url, **kwargs):
         return Resp(200, {"id": "rid", "name": "roleA"})
 
-    monkeypatch.setattr(auth_module.requests, "get", fake_get)
-    out = svc._get_client_role("ADM", "cid", "roleA")
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    out = await svc._get_client_role("ADM", "cid", "roleA")
     assert out["name"] == "roleA"
 
 
-def test_get_user_client_roles_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_user_client_roles_success(monkeypatch, make_service):
     svc, _ = make_service()
 
-    def fake_get(url, headers=None, verify=None):
+    async def fake_get(self_client, url, **kwargs):
         return Resp(200, [{"name": "oldRole"}])
 
-    monkeypatch.setattr(auth_module.requests, "get", fake_get)
-    out = svc._get_user_client_roles("ADM", "uid", "cid")
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    out = await svc._get_user_client_roles("ADM", "uid", "cid")
     assert out and out[0]["name"] == "oldRole"
 
 
-def test_get_user_client_roles_exception_returns_empty(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_get_user_client_roles_exception_returns_empty(monkeypatch, make_service):
     svc, _ = make_service()
 
-    def fake_get(*a, **k):
-        raise RequestException("net")
+    async def fake_get(self_client, url, **kwargs):
+        raise httpx.ConnectError("net")
 
-    monkeypatch.setattr(auth_module.requests, "get", fake_get)
-    out = svc._get_user_client_roles("ADM", "uid", "cid")
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    out = await svc._get_user_client_roles("ADM", "uid", "cid")
     assert out == []
 
 
-def test_remove_user_client_roles_noop(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_remove_user_client_roles_noop(monkeypatch, make_service):
     svc, _ = make_service()
     called = {"del": False}
 
-    def fake_delete(*a, **k):
+    async def fake_request(self_client, method, url, **kwargs):
         called["del"] = True
         return Resp(204)
 
-    monkeypatch.setattr(auth_module.requests, "delete", fake_delete)
-    svc._remove_user_client_roles("ADM", "uid", "cid", [])
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    await svc._remove_user_client_roles("ADM", "uid", "cid", [])
     assert called["del"] is False
 
 
-def test_remove_user_client_roles_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_remove_user_client_roles_success(monkeypatch, make_service):
     svc, _ = make_service()
     called = {"json": None}
 
-    def fake_delete(url, json=None, headers=None, verify=None):
-        called["json"] = json
+    async def fake_request(self_client, method, url, **kwargs):
+        called["json"] = kwargs.get("json")
         return Resp(204)
 
-    monkeypatch.setattr(auth_module.requests, "delete", fake_delete)
-    svc._remove_user_client_roles("ADM", "uid", "cid", [{"name": "old"}])
+    monkeypatch.setattr(httpx.AsyncClient, "request", fake_request)
+    await svc._remove_user_client_roles("ADM", "uid", "cid", [{"name": "old"}])
     assert called["json"] == [{"name": "old"}]
 
 
-def test_assign_user_client_role_success(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_assign_user_client_role_success(monkeypatch, make_service):
     svc, _ = make_service()
     captured = {"json": None}
 
-    def fake_post(url, json=None, headers=None, verify=None):
-        captured["json"] = json
+    async def fake_post(self_client, url, **kwargs):
+        captured["json"] = kwargs.get("json")
         return Resp(204)
 
-    monkeypatch.setattr(auth_module.requests, "post", fake_post)
-    svc._assign_user_client_role("ADM", "uid", "cid", {"name": "roleX"})
+    monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
+    await svc._assign_user_client_role("ADM", "uid", "cid", {"name": "roleX"})
     assert captured["json"] == [{"name": "roleX"}]
 
 
-def test_update_user_role_happy_path(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_update_user_role_happy_path(monkeypatch, make_service):
     svc, _ = make_service()
     called = {"removed": None, "assigned": None}
-    monkeypatch.setattr(svc, "_get_admin_token", lambda: "ADM")
-    monkeypatch.setattr(svc, "_get_client_id", lambda adm, name: "cid-1")
+    monkeypatch.setattr(svc, "_get_admin_token", AsyncMock(return_value="ADM"))
+    monkeypatch.setattr(svc, "_get_client_id", AsyncMock(return_value="cid-1"))
     monkeypatch.setattr(
-        svc, "_get_user_client_roles", lambda adm, uid, cid: [{"name": "old"}]
+        svc, "_get_user_client_roles", AsyncMock(return_value=[{"name": "old"}])
     )
 
-    def fake_remove(adm, uid, cid, roles):
+    async def fake_remove(adm, uid, cid, roles):
         called["removed"] = roles
 
     monkeypatch.setattr(svc, "_remove_user_client_roles", fake_remove)
     monkeypatch.setattr(
-        svc, "_get_client_role", lambda adm, cid, role: {"id": "rid", "name": role}
+        svc, "_get_client_role", AsyncMock(return_value={"id": "rid", "name": "admin"})
     )
 
-    def fake_assign(adm, uid, cid, role):
+    async def fake_assign(adm, uid, cid, role):
         called["assigned"] = role["name"]
 
     monkeypatch.setattr(svc, "_assign_user_client_role", fake_assign)
-    svc.update_user_role("uid-1", "admin")
+    await svc.update_user_role("uid-1", "admin")
     assert called["removed"] == [{"name": "old"}]
     assert called["assigned"] == "admin"
 
 
-def test_update_user_role_failure_wrapped(monkeypatch, make_service):
+@pytest.mark.anyio
+async def test_update_user_role_failure_wrapped(monkeypatch, make_service):
     svc, _ = make_service()
     monkeypatch.setattr(
-        svc, "_get_admin_token", lambda: (_ for _ in ()).throw(Exception("fail"))
+        svc, "_get_admin_token", AsyncMock(side_effect=Exception("fail"))
     )
     with pytest.raises(auth_module.HTTPException) as ei:
-        svc.update_user_role("uid", "role")
+        await svc.update_user_role("uid", "role")
     assert ei.value.status_code == 500

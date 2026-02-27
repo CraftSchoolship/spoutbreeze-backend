@@ -189,10 +189,10 @@ class BroadcasterService:
                 )
 
             # Meeting running check
-            bbb_service.is_meeting_running(
+            await bbb_service.is_meeting_running(
                 request=IsMeetingRunningRequest(meeting_id=meeting_id)
             )
-            meeting_info = bbb_service.get_meeting_info(
+            meeting_info = await bbb_service.get_meeting_info(
                 request=GetMeetingInfoRequest(meeting_id=meeting_id, password=password)
             )
 

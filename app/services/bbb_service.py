@@ -1,6 +1,6 @@
 import time
 import json
-import requests
+import httpx
 from urllib.parse import urlencode
 from typing import Dict, Any, Union, Optional
 from fastapi import HTTPException
@@ -89,7 +89,7 @@ class BBBService:
         # Remove None values
         params = {k: v for k, v in params.items() if v is not None}
 
-        response = self._call_bbb_api("create", params)
+        response = await self._call_bbb_api("create", params)
         # Check if the meeting was created successfully
         if response.get("returncode") != "SUCCESS":
             raise HTTPException(
@@ -169,7 +169,7 @@ class BBBService:
         params = {"meetingID": request.meeting_id, "password": request.password}
 
         # Call BBB API to end the meeting
-        response = self._call_bbb_api("end", params)
+        response = await self._call_bbb_api("end", params)
 
         if response.get("returncode") == "SUCCESS":
             # Update the meeting in the database
@@ -184,32 +184,32 @@ class BBBService:
 
         return response
 
-    def is_meeting_running(self, request: IsMeetingRunningRequest) -> Dict[str, Any]:
+    async def is_meeting_running(self, request: IsMeetingRunningRequest) -> Dict[str, Any]:
         """Check if a meeting is running."""
         params = {"meetingID": request.meeting_id}
 
-        return self._call_bbb_api("isMeetingRunning", params)
+        return await self._call_bbb_api("isMeetingRunning", params)
 
-    def get_meeting_info(self, request: GetMeetingInfoRequest) -> Dict[str, Any]:
+    async def get_meeting_info(self, request: GetMeetingInfoRequest) -> Dict[str, Any]:
         """Get detailed information about a meeting."""
         if request.password:
             params = {"meetingID": request.meeting_id, "password": request.password}
         else:
             params = {"meetingID": request.meeting_id}
 
-        return self._call_bbb_api("getMeetingInfo", params)
+        return await self._call_bbb_api("getMeetingInfo", params)
 
-    def get_meetings(self) -> Dict[str, Any]:
+    async def get_meetings(self) -> Dict[str, Any]:
         """Get the list of all meetings."""
-        return self._call_bbb_api("getMeetings", {})
+        return await self._call_bbb_api("getMeetings", {})
 
-    def get_recordings(self, request: GetRecordingRequest) -> Dict[str, Any]:
+    async def get_recordings(self, request: GetRecordingRequest) -> Dict[str, Any]:
         """Get the list of all recordings."""
         params = {
             "meetingID": request.meeting_id,
         }
 
-        return self._call_bbb_api("getRecordings", params)
+        return await self._call_bbb_api("getRecordings", params)
 
     def get_join_url(
         self,
@@ -307,7 +307,7 @@ class BBBService:
                 meeting_info_request = GetMeetingInfoRequest(
                     meeting_id=meeting_id, password=""
                 )
-                meeting_info = self.get_meeting_info(request=meeting_info_request)
+                meeting_info = await self.get_meeting_info(request=meeting_info_request)
 
                 # Update meeting status fields
                 meeting.has_user_joined = meeting_info.get(
@@ -397,7 +397,7 @@ class BBBService:
             logger.error(f"Error processing meeting end callback: {e}")
             return {"success": False, "error": str(e)}
 
-    def _call_bbb_api(self, api_call: str, params: dict) -> dict:
+    async def _call_bbb_api(self, api_call: str, params: dict) -> dict:
         """Makes a call to the BBB API and returns the parsed XML response."""
         # Create a copy to avoid modifying the original
         processed_params = {}
@@ -435,7 +435,8 @@ class BBBService:
         logger.debug(f"BBB API URL: {full_url}")
 
         # Make the API call
-        response = requests.get(full_url)
+        async with httpx.AsyncClient(timeout=30, verify=False) as client:
+            response = await client.get(full_url)
         if response.status_code != 200:
             raise HTTPException(
                 status_code=response.status_code, detail="BBB API request failed"

@@ -1,4 +1,4 @@
-import requests
+import httpx
 from fastapi import HTTPException, status
 from jose import jwt
 from app.config.settings import keycloak_openid, get_settings
@@ -186,7 +186,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    def _get_admin_token(self) -> str:
+    async def _get_admin_token(self) -> str:
         """
         Get admin token from Keycloak with caching
         """
@@ -209,9 +209,10 @@ class AuthService:
 
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-            response = requests.post(
-                admin_token_url, data=data, headers=headers, verify=self.ssl_verify
-            )
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.post(
+                    admin_token_url, data=data, headers=headers
+                )
             response.raise_for_status()
 
             token_data = response.json()
@@ -232,7 +233,7 @@ class AuthService:
                 detail="Failed to authenticate with Keycloak admin",
             )
 
-    def update_user_profile(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    async def update_user_profile(self, user_id: str, user_data: Dict[str, Any]) -> bool:
         """
         Update user information in Keycloak using admin API
         """
@@ -240,7 +241,7 @@ class AuthService:
             logger.info(f"Updating profile for user: {user_id}")
 
             # Get admin token
-            admin_token = self._get_admin_token()
+            admin_token = await self._get_admin_token()
 
             # Map the field names to Keycloak's expected format
             keycloak_user_data = {}
@@ -264,32 +265,39 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.put(
-                update_url,
-                json=keycloak_user_data,
-                headers=headers,
-                timeout=10,
-                verify=self.ssl_verify,
-            )
+            async with httpx.AsyncClient(timeout=10, verify=self.ssl_verify) as client:
+                response = await client.put(
+                    update_url,
+                    json=keycloak_user_data,
+                    headers=headers,
+                )
             response.raise_for_status()
 
             logger.info(
                 f"User profile updated successfully in Keycloak for user ID: {user_id}"
             )
             return True
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"Timeout while updating user profile for user ID: {user_id}")
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
                 detail="Request timeout while updating user profile",
             )
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPStatusError as e:
             logger.error(
                 f"Failed to update user info in Keycloak for user {user_id}: {str(e)}"
             )
-            if hasattr(e, "response") and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
-                logger.error(f"Response content: {e.response.text}")
+            logger.error(f"Response status: {e.response.status_code}")
+            logger.error(f"Response content: {e.response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to update user info: {str(e)}",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        except httpx.HTTPError as e:
+            logger.error(
+                f"Failed to update user info in Keycloak for user {user_id}: {str(e)}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Failed to update user info: {str(e)}",
@@ -332,7 +340,7 @@ class AuthService:
             logger.error(f"Keycloak health check failed: {str(e)}")
             return False
 
-    def _get_client_id(self, admin_token: str, client_name: str) -> str:
+    async def _get_client_id(self, admin_token: str, client_name: str) -> str:
         """
         Get the internal client ID for a given client name
         """
@@ -345,9 +353,10 @@ class AuthService:
 
             params = {"clientId": client_name}
 
-            response = requests.get(
-                url, headers=headers, params=params, verify=self.ssl_verify
-            )
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.get(
+                    url, headers=headers, params=params
+                )
             response.raise_for_status()
 
             clients = response.json()
@@ -359,7 +368,7 @@ class AuthService:
             logger.error(f"Failed to get client ID for {client_name}: {str(e)}")
             raise
 
-    def _get_client_role(
+    async def _get_client_role(
         self, admin_token: str, client_id: str, role_name: str
     ) -> Dict[str, Any]:
         """
@@ -372,7 +381,8 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.get(url, headers=headers, verify=self.ssl_verify)
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.get(url, headers=headers)
             response.raise_for_status()
 
             return response.json()
@@ -380,7 +390,7 @@ class AuthService:
             logger.error(f"Failed to get client role {role_name}: {str(e)}")
             raise
 
-    def _get_user_client_roles(
+    async def _get_user_client_roles(
         self, admin_token: str, user_id: str, client_id: str
     ) -> List[Dict[str, Any]]:
         """
@@ -393,7 +403,8 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.get(url, headers=headers, verify=self.ssl_verify)
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.get(url, headers=headers)
             response.raise_for_status()
 
             return response.json()
@@ -401,7 +412,7 @@ class AuthService:
             logger.error(f"Failed to get user client roles: {str(e)}")
             return []
 
-    def _remove_user_client_roles(
+    async def _remove_user_client_roles(
         self,
         admin_token: str,
         user_id: str,
@@ -421,9 +432,10 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.delete(
-                url, json=roles, headers=headers, verify=self.ssl_verify
-            )
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.request(
+                    "DELETE", url, json=roles, headers=headers
+                )
             response.raise_for_status()
 
             logger.info(
@@ -433,7 +445,7 @@ class AuthService:
             logger.error(f"Failed to remove client roles: {str(e)}")
             raise
 
-    def _assign_user_client_role(
+    async def _assign_user_client_role(
         self, admin_token: str, user_id: str, client_id: str, role: Dict[str, Any]
     ) -> None:
         """
@@ -446,9 +458,10 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.post(
-                url, json=[role], headers=headers, verify=self.ssl_verify
-            )
+            async with httpx.AsyncClient(timeout=30, verify=self.ssl_verify) as client:
+                response = await client.post(
+                    url, json=[role], headers=headers
+                )
             response.raise_for_status()
 
             logger.info(
@@ -458,7 +471,7 @@ class AuthService:
             logger.error(f"Failed to assign client role: {str(e)}")
             raise
 
-    def update_user_role(self, user_id: str, new_role: str) -> None:
+    async def update_user_role(self, user_id: str, new_role: str) -> None:
         """
         Update a user's role in Keycloak using the proper Admin REST API
 
@@ -468,31 +481,31 @@ class AuthService:
         """
         try:
             # Get admin token
-            admin_token = self._get_admin_token()
+            admin_token = await self._get_admin_token()
 
             # Get the spoutbreezeAPI client ID
-            client_id = self._get_client_id(admin_token, "spoutbreezeAPI")
+            client_id = await self._get_client_id(admin_token, "spoutbreezeAPI")
             logger.info(f"Found client ID: {client_id} for spoutbreezeAPI")
 
             # Get current client roles for the user
-            current_roles = self._get_user_client_roles(admin_token, user_id, client_id)
+            current_roles = await self._get_user_client_roles(admin_token, user_id, client_id)
             logger.info(
                 f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}"
             )
 
             # Remove all existing client roles for this client
             if current_roles:
-                self._remove_user_client_roles(
+                await self._remove_user_client_roles(
                     admin_token, user_id, client_id, current_roles
                 )
                 logger.info(f"Removed existing client roles from user {user_id}")
 
             # Get the new role information
-            new_role_info = self._get_client_role(admin_token, client_id, new_role)
+            new_role_info = await self._get_client_role(admin_token, client_id, new_role)
             logger.info(f"Found role info for {new_role}: {new_role_info}")
 
             # Assign the new client role
-            self._assign_user_client_role(
+            await self._assign_user_client_role(
                 admin_token, user_id, client_id, new_role_info
             )
 
@@ -507,7 +520,7 @@ class AuthService:
                 detail=f"Failed to update user role: {str(e)}",
             )
 
-    def delete_user(self, user_id: str) -> bool:
+    async def delete_user(self, user_id: str) -> bool:
         """
         Permanently delete a user from Keycloak using the Admin REST API.
 
@@ -523,7 +536,7 @@ class AuthService:
         try:
             logger.info(f"Deleting user from Keycloak: {user_id}")
 
-            admin_token = self._get_admin_token()
+            admin_token = await self._get_admin_token()
 
             delete_url = (
                 f"{self.settings.keycloak_server_url}/admin/realms/"
@@ -535,12 +548,11 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.delete(
-                delete_url,
-                headers=headers,
-                timeout=10,
-                verify=self.ssl_verify,
-            )
+            async with httpx.AsyncClient(timeout=10, verify=self.ssl_verify) as client:
+                response = await client.delete(
+                    delete_url,
+                    headers=headers,
+                )
             response.raise_for_status()
 
             logger.info(
@@ -548,19 +560,26 @@ class AuthService:
             )
             return True
 
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"Timeout while deleting user {user_id} from Keycloak")
             raise HTTPException(
                 status_code=status.HTTP_408_REQUEST_TIMEOUT,
                 detail="Request timeout while deleting user from Keycloak",
             )
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPStatusError as e:
             logger.error(
                 f"Failed to delete user {user_id} from Keycloak: {str(e)}"
             )
-            if hasattr(e, "response") and e.response is not None:
-                logger.error(f"Response status: {e.response.status_code}")
-                logger.error(f"Response content: {e.response.text}")
+            logger.error(f"Response status: {e.response.status_code}")
+            logger.error(f"Response content: {e.response.text}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to delete user from Keycloak: {str(e)}",
+            )
+        except httpx.HTTPError as e:
+            logger.error(
+                f"Failed to delete user {user_id} from Keycloak: {str(e)}"
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to delete user from Keycloak: {str(e)}",

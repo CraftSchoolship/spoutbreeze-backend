@@ -24,23 +24,23 @@ class BBBServiceCached(BBBService):
     async def get_meeting_info_cached(
         self, request: GetMeetingInfoRequest
     ) -> Dict[str, Any]:
-        return super().get_meeting_info(request)
+        return await super().get_meeting_info(request)
 
     @cached(ttl=60, key_prefix="bbb:is_running")
     async def is_meeting_running_cached(
         self, request: IsMeetingRunningRequest
     ) -> Dict[str, Any]:
-        return super().is_meeting_running(request)
+        return await super().is_meeting_running(request)
 
     @cached(ttl=settings.cache_ttl_bbb, key_prefix="bbb:meetings")
     async def get_meetings_cached(self) -> Dict[str, Any]:
-        return super().get_meetings()
+        return await super().get_meetings()
 
     @cached(ttl=settings.cache_ttl_medium, key_prefix="bbb:recordings")
     async def get_recordings_cached(
         self, request: GetRecordingRequest
     ) -> Dict[str, Any]:
-        return super().get_recordings(request)
+        return await super().get_recordings(request)
 
     # WRITES/STATE CHANGES → invalidate
     async def create_meeting(

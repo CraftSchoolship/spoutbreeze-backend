@@ -1,6 +1,10 @@
 from __future__ import annotations
-import pickle
+import json
 import hashlib
+from datetime import datetime, date
+from decimal import Decimal
+from enum import Enum
+from uuid import UUID
 from typing import Optional, Callable, Any, TypeVar, ParamSpec, cast, Coroutine, Set
 from functools import wraps
 
@@ -13,6 +17,61 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = get_settings()
 logger = get_logger("Redis")
+
+
+# ---------------------------------------------------------------------------
+# JSON helpers – replaces pickle to eliminate the deserialization-RCE vector
+# ---------------------------------------------------------------------------
+
+class _CacheDict(dict):
+    """Dict subclass that supports attribute access so cached dicts remain
+    compatible with code that previously accessed ORM/Pydantic attributes
+    (e.g. ``user.username`` instead of ``user["username"]``)."""
+
+    def __getattr__(self, key: str) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            raise AttributeError(key)
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        self[key] = value
+
+
+class _SafeJSONEncoder(json.JSONEncoder):
+    """Handles types commonly stored in the cache that ``json.dumps`` cannot
+    serialise by default."""
+
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, Decimal):
+            return float(obj)
+        if isinstance(obj, Enum):
+            return obj.value
+        if isinstance(obj, bytes):
+            return obj.decode("utf-8", errors="replace")
+        if isinstance(obj, set):
+            return list(obj)
+        # Pydantic BaseModel
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump(mode="json")
+        # SQLAlchemy mapped instance (has __table__ from the ORM mapping)
+        if hasattr(obj, "__table__"):
+            return {
+                c.name: getattr(obj, c.name, None) for c in obj.__table__.columns
+            }
+        return super().default(obj)
+
+
+def _cache_object_hook(d: dict) -> _CacheDict:
+    """``object_hook`` for ``json.loads`` – converts every decoded dict into
+    a `_CacheDict` so attribute-style access keeps working."""
+    return _CacheDict(d)
 
 
 class RedisCache:
@@ -52,7 +111,7 @@ class RedisCache:
             raw = await self.redis_client.get(key)
             if raw is None:
                 return None
-            return pickle.loads(raw)
+            return json.loads(raw, object_hook=_cache_object_hook)
         except Exception as e:
             logger.error(f"GET {key} error: {e}")
             return None
@@ -61,7 +120,7 @@ class RedisCache:
         if not self.redis_client:
             return False
         try:
-            await self.redis_client.setex(key, ttl, pickle.dumps(value))
+            await self.redis_client.setex(key, ttl, json.dumps(value, cls=_SafeJSONEncoder))
             logger.info(f"Cache SET for key: {key}")
             return True
         except Exception as e:

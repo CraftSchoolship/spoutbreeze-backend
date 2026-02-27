@@ -43,10 +43,10 @@ class Event(Base):
     )
     timezone: Mapped[str] = mapped_column(String, nullable=False, default="UTC")
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), nullable=False
+        DateTime, default=datetime.now, nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False
+        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
     )
 
     creator_id: Mapped[uuid.UUID] = mapped_column(

@@ -161,7 +161,7 @@ async def update_user_profile(
         )
 
         # Update user in Keycloak first
-        auth_service.update_user_profile(
+        await auth_service.update_user_profile(
             user_id=current_user.keycloak_id, user_data=profile_update_data
         )
 
@@ -302,7 +302,7 @@ async def update_user_role(
 
         # Update role in Keycloak first
         try:
-            auth_service.update_user_role(
+            await auth_service.update_user_role(
                 user_id=target_user.keycloak_id, new_role=new_role
             )
         except HTTPException as e:
@@ -542,7 +542,7 @@ async def delete_account(
             )
 
         # Step 2: Delete user from Keycloak
-        auth_service.delete_user(current_user.keycloak_id)
+        await auth_service.delete_user(current_user.keycloak_id)
         logger.info(
             f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak"
         )
