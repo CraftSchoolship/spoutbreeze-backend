@@ -3,8 +3,9 @@ Stripe Helper Script
 This script helps you find the correct Price IDs from your Stripe Products
 """
 
-import stripe
 import os
+
+import stripe
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -39,9 +40,7 @@ try:
                 for price in prices.data:
                     amount = price.unit_amount / 100 if price.unit_amount else 0
                     currency = price.currency.upper()
-                    interval = (
-                        price.recurring.interval if price.recurring else "one-time"
-                    )
+                    interval = price.recurring.interval if price.recurring else "one-time"
 
                     print(f"      • Price ID: {price.id}")
                     print(f"        Amount: {amount} {currency}/{interval}")
@@ -51,18 +50,10 @@ try:
                     product_name_lower = product.name.lower()
                     if "free" in product_name_lower or "trial" in product_name_lower:
                         print(f"        ➡️  Use for: STRIPE_FREE_PRICE_ID={price.id}")
-                    elif (
-                        "pro" in product_name_lower
-                        and "enterprise" not in product_name_lower
-                    ):
+                    elif "pro" in product_name_lower and "enterprise" not in product_name_lower:
                         print(f"        ➡️  Use for: STRIPE_PRO_PRICE_ID={price.id}")
-                    elif (
-                        "enterprise" in product_name_lower
-                        or "custom" in product_name_lower
-                    ):
-                        print(
-                            f"        ➡️  Use for: STRIPE_ENTERPRISE_PRICE_ID={price.id}"
-                        )
+                    elif "enterprise" in product_name_lower or "custom" in product_name_lower:
+                        print(f"        ➡️  Use for: STRIPE_ENTERPRISE_PRICE_ID={price.id}")
 
                     print()
             else:

@@ -1,12 +1,13 @@
+import os
+from datetime import datetime, timedelta
+from typing import Any
+
 import requests
 from fastapi import HTTPException, status
 from jose import jwt
-from app.config.settings import keycloak_openid, get_settings
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Union, List
-import os
 
 from app.config.logger_config import logger
+from app.config.settings import get_settings, keycloak_openid
 
 
 class AuthService:
@@ -22,18 +23,16 @@ class AuthService:
 
         if not raw_key.startswith("-----BEGIN"):
             # Format the public key proparly for PEM format
-            self.public_key = (
-                f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
-            )
+            self.public_key = f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
         else:
             self.public_key = raw_key
 
-        self._admin_token_cache: Optional[dict] = None
+        self._admin_token_cache: dict | None = None
 
         # SSL verification for requests
         self.ssl_verify = self._get_ssl_verify()
 
-    def _get_ssl_verify(self) -> Union[str, bool]:
+    def _get_ssl_verify(self) -> str | bool:
         """
         Determine SSL verification method based on certificate availability
         """
@@ -48,7 +47,7 @@ class AuthService:
         logger.warning("SSL certificate not found, disabling SSL verification")
         return False
 
-    def validate_token(self, token: str) -> Dict[str, Any]:
+    def validate_token(self, token: str) -> dict[str, Any]:
         """
         Validate and decode the JWT token
 
@@ -112,9 +111,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    def exchange_token(
-        self, code: str, redirect_uri: str, code_verifier: str
-    ) -> Dict[str, Any]:
+    def exchange_token(self, code: str, redirect_uri: str, code_verifier: str) -> dict[str, Any]:
         """
         Exchange authorization code for tokens
         """
@@ -134,7 +131,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
+    def refresh_token(self, refresh_token: str) -> dict[str, Any]:
         """
         Refresh the access token using the refresh token
 
@@ -148,9 +145,7 @@ class AuthService:
             HTTPException: If the refresh token is invalid or expired
         """
         try:
-            logger.info(
-                f"Attempting to refresh token starting with: {refresh_token[:10]}..."
-            )
+            logger.info(f"Attempting to refresh token starting with: {refresh_token[:10]}...")
 
             token_response = keycloak_openid.refresh_token(refresh_token)
 
@@ -172,7 +167,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    def get_user_info(self, access_token: str) -> Dict[str, Any]:
+    def get_user_info(self, access_token: str) -> dict[str, Any]:
         """
         Get user information from Keycloak using the access token
         """
@@ -191,10 +186,7 @@ class AuthService:
         Get admin token from Keycloak with caching
         """
         # Check if we have a cached token that's still valid
-        if (
-            self._admin_token_cache
-            and self._admin_token_cache["expires_at"] > datetime.now()
-        ):
+        if self._admin_token_cache and self._admin_token_cache["expires_at"] > datetime.now():
             return self._admin_token_cache["token"]
 
         try:
@@ -209,9 +201,7 @@ class AuthService:
 
             headers = {"Content-Type": "application/x-www-form-urlencoded"}
 
-            response = requests.post(
-                admin_token_url, data=data, headers=headers, verify=self.ssl_verify
-            )
+            response = requests.post(admin_token_url, data=data, headers=headers, verify=self.ssl_verify)
             response.raise_for_status()
 
             token_data = response.json()
@@ -232,7 +222,7 @@ class AuthService:
                 detail="Failed to authenticate with Keycloak admin",
             )
 
-    def update_user_profile(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    def update_user_profile(self, user_id: str, user_data: dict[str, Any]) -> bool:
         """
         Update user information in Keycloak using admin API
         """
@@ -273,9 +263,7 @@ class AuthService:
             )
             response.raise_for_status()
 
-            logger.info(
-                f"User profile updated successfully in Keycloak for user ID: {user_id}"
-            )
+            logger.info(f"User profile updated successfully in Keycloak for user ID: {user_id}")
             return True
         except requests.exceptions.Timeout:
             logger.error(f"Timeout while updating user profile for user ID: {user_id}")
@@ -284,9 +272,7 @@ class AuthService:
                 detail="Request timeout while updating user profile",
             )
         except requests.exceptions.RequestException as e:
-            logger.error(
-                f"Failed to update user info in Keycloak for user {user_id}: {str(e)}"
-            )
+            logger.error(f"Failed to update user info in Keycloak for user {user_id}: {str(e)}")
             if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response content: {e.response.text}")
@@ -296,9 +282,7 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except Exception as e:
-            logger.error(
-                f"Unexpected error updating user profile for user {user_id}: {str(e)}"
-            )
+            logger.error(f"Unexpected error updating user profile for user {user_id}: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred while updating user profile",
@@ -345,9 +329,7 @@ class AuthService:
 
             params = {"clientId": client_name}
 
-            response = requests.get(
-                url, headers=headers, params=params, verify=self.ssl_verify
-            )
+            response = requests.get(url, headers=headers, params=params, verify=self.ssl_verify)
             response.raise_for_status()
 
             clients = response.json()
@@ -359,9 +341,7 @@ class AuthService:
             logger.error(f"Failed to get client ID for {client_name}: {str(e)}")
             raise
 
-    def _get_client_role(
-        self, admin_token: str, client_id: str, role_name: str
-    ) -> Dict[str, Any]:
+    def _get_client_role(self, admin_token: str, client_id: str, role_name: str) -> dict[str, Any]:
         """
         Get client role information
         """
@@ -380,9 +360,7 @@ class AuthService:
             logger.error(f"Failed to get client role {role_name}: {str(e)}")
             raise
 
-    def _get_user_client_roles(
-        self, admin_token: str, user_id: str, client_id: str
-    ) -> List[Dict[str, Any]]:
+    def _get_user_client_roles(self, admin_token: str, user_id: str, client_id: str) -> list[dict[str, Any]]:
         """
         Get current client roles for a user
         """
@@ -406,7 +384,7 @@ class AuthService:
         admin_token: str,
         user_id: str,
         client_id: str,
-        roles: List[Dict[str, Any]],
+        roles: list[dict[str, Any]],
     ) -> None:
         """
         Remove client roles from a user
@@ -421,21 +399,15 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.delete(
-                url, json=roles, headers=headers, verify=self.ssl_verify
-            )
+            response = requests.delete(url, json=roles, headers=headers, verify=self.ssl_verify)
             response.raise_for_status()
 
-            logger.info(
-                f"Successfully removed {len(roles)} client roles from user {user_id}"
-            )
+            logger.info(f"Successfully removed {len(roles)} client roles from user {user_id}")
         except Exception as e:
             logger.error(f"Failed to remove client roles: {str(e)}")
             raise
 
-    def _assign_user_client_role(
-        self, admin_token: str, user_id: str, client_id: str, role: Dict[str, Any]
-    ) -> None:
+    def _assign_user_client_role(self, admin_token: str, user_id: str, client_id: str, role: dict[str, Any]) -> None:
         """
         Assign a client role to a user
         """
@@ -446,14 +418,10 @@ class AuthService:
                 "Content-Type": "application/json",
             }
 
-            response = requests.post(
-                url, json=[role], headers=headers, verify=self.ssl_verify
-            )
+            response = requests.post(url, json=[role], headers=headers, verify=self.ssl_verify)
             response.raise_for_status()
 
-            logger.info(
-                f"Successfully assigned client role {role['name']} to user {user_id}"
-            )
+            logger.info(f"Successfully assigned client role {role['name']} to user {user_id}")
         except Exception as e:
             logger.error(f"Failed to assign client role: {str(e)}")
             raise
@@ -476,15 +444,11 @@ class AuthService:
 
             # Get current client roles for the user
             current_roles = self._get_user_client_roles(admin_token, user_id, client_id)
-            logger.info(
-                f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}"
-            )
+            logger.info(f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}")
 
             # Remove all existing client roles for this client
             if current_roles:
-                self._remove_user_client_roles(
-                    admin_token, user_id, client_id, current_roles
-                )
+                self._remove_user_client_roles(admin_token, user_id, client_id, current_roles)
                 logger.info(f"Removed existing client roles from user {user_id}")
 
             # Get the new role information
@@ -492,13 +456,9 @@ class AuthService:
             logger.info(f"Found role info for {new_role}: {new_role_info}")
 
             # Assign the new client role
-            self._assign_user_client_role(
-                admin_token, user_id, client_id, new_role_info
-            )
+            self._assign_user_client_role(admin_token, user_id, client_id, new_role_info)
 
-            logger.info(
-                f"Successfully updated user {user_id} client role to {new_role}"
-            )
+            logger.info(f"Successfully updated user {user_id} client role to {new_role}")
 
         except Exception as e:
             logger.error(f"Failed to update user role in Keycloak: {str(e)}")
@@ -525,10 +485,7 @@ class AuthService:
 
             admin_token = self._get_admin_token()
 
-            delete_url = (
-                f"{self.settings.keycloak_server_url}/admin/realms/"
-                f"{self.settings.keycloak_realm}/users/{user_id}"
-            )
+            delete_url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/users/{user_id}"
 
             headers = {
                 "Authorization": f"Bearer {admin_token}",
@@ -543,9 +500,7 @@ class AuthService:
             )
             response.raise_for_status()
 
-            logger.info(
-                f"User {user_id} deleted successfully from Keycloak"
-            )
+            logger.info(f"User {user_id} deleted successfully from Keycloak")
             return True
 
         except requests.exceptions.Timeout:
@@ -555,9 +510,7 @@ class AuthService:
                 detail="Request timeout while deleting user from Keycloak",
             )
         except requests.exceptions.RequestException as e:
-            logger.error(
-                f"Failed to delete user {user_id} from Keycloak: {str(e)}"
-            )
+            logger.error(f"Failed to delete user {user_id} from Keycloak: {str(e)}")
             if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response content: {e.response.text}")
@@ -566,9 +519,7 @@ class AuthService:
                 detail=f"Failed to delete user from Keycloak: {str(e)}",
             )
         except Exception as e:
-            logger.error(
-                f"Unexpected error deleting user {user_id} from Keycloak: {str(e)}"
-            )
+            logger.error(f"Unexpected error deleting user {user_id} from Keycloak: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="An unexpected error occurred while deleting user from Keycloak",

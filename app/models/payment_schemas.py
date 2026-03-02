@@ -72,9 +72,7 @@ class TransactionResponse(BaseModel):
 # Checkout schemas
 class CreateCheckoutSessionRequest(BaseModel):
     price_id: str = Field(..., description="Stripe Price ID for the plan")
-    success_url: str = Field(
-        ..., description="URL to redirect after successful payment"
-    )
+    success_url: str = Field(..., description="URL to redirect after successful payment")
     cancel_url: str = Field(..., description="URL to redirect after cancelled payment")
 
 
@@ -85,9 +83,7 @@ class CheckoutSessionResponse(BaseModel):
 
 # Portal schemas
 class CustomerPortalRequest(BaseModel):
-    return_url: str = Field(
-        ..., description="URL to return to after managing subscription"
-    )
+    return_url: str = Field(..., description="URL to return to after managing subscription")
 
 
 class CustomerPortalResponse(BaseModel):

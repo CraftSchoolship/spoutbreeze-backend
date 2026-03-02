@@ -1,26 +1,29 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Path
-from typing import List
+import inspect
+import uuid
 from uuid import UUID
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
+from pydantic import BaseModel
 from sqlalchemy import select
-from app.services.auth_service import AuthService
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
+from app.config.logger_config import logger
+from app.config.redis_config import cache
+from app.config.settings import get_settings
 from app.models.user_models import User
 from app.models.user_schemas import (
-    UserResponse,
     UpdateProfileRequest,
     UpdateUserRoleRequest,
+    UserResponse,
 )
-from app.config.logger_config import logger
-from app.config.settings import get_settings
+from app.services.auth_service import AuthService
 from app.services.cached.user_service_cached import user_service_cached
-from app.config.redis_config import cache
-import uuid
-import inspect
-from pydantic import BaseModel
+
 
 class UpdateResolutionRequest(BaseModel):
     default_resolution: str
+
 
 auth_service = AuthService()
 settings = get_settings()
@@ -76,7 +79,7 @@ async def get_current_user(
         raise credentials_exception
 
 
-def get_current_user_roles(current_user: User = Depends(get_current_user)) -> List[str]:
+def get_current_user_roles(current_user: User = Depends(get_current_user)) -> list[str]:
     """
     Get roles from the database (stored from Keycloak) with caching
     """
@@ -135,9 +138,7 @@ async def update_user_profile(
     Update the current user's profile information with cache invalidation
     """
     request_id = str(uuid.uuid4())
-    logger.info(
-        f"[{request_id}] Starting profile update for user: {current_user.username}"
-    )
+    logger.info(f"[{request_id}] Starting profile update for user: {current_user.username}")
 
     try:
         profile_update_data = {}
@@ -156,27 +157,19 @@ async def update_user_profile(
                 detail="No profile data provided to update",
             )
 
-        logger.info(
-            f"[{request_id}] Updating Keycloak profile for user: {current_user.keycloak_id}"
-        )
+        logger.info(f"[{request_id}] Updating Keycloak profile for user: {current_user.keycloak_id}")
 
         # Update user in Keycloak first
-        auth_service.update_user_profile(
-            user_id=current_user.keycloak_id, user_data=profile_update_data
-        )
+        auth_service.update_user_profile(user_id=current_user.keycloak_id, user_data=profile_update_data)
 
-        logger.info(
-            f"[{request_id}] Updating database profile for user: {current_user.username}"
-        )
+        logger.info(f"[{request_id}] Updating database profile for user: {current_user.username}")
 
         # Update user in the database using cached service
         updated_user = await user_service_cached.update_user_profile(
             user_id=current_user.id, updates=profile_update_data, db=db
         )
 
-        logger.info(
-            f"[{request_id}] Profile update completed successfully for user: {current_user.username}"
-        )
+        logger.info(f"[{request_id}] Profile update completed successfully for user: {current_user.username}")
         return updated_user
 
     except HTTPException as e:
@@ -192,7 +185,7 @@ async def update_user_profile(
         )
 
 
-@router.get("/users", response_model=List[UserResponse])
+@router.get("/users", response_model=list[UserResponse])
 async def get_users(
     skip: int = 0,
     limit: int = 100,
@@ -259,9 +252,7 @@ async def update_user_role(
     Update a user's role (Admin only) with cache invalidation
     """
     request_id = str(uuid.uuid4())
-    logger.info(
-        f"[{request_id}] Admin {current_user.username} updating role for user {user_id} to {role_data.role}"
-    )
+    logger.info(f"[{request_id}] Admin {current_user.username} updating role for user {user_id} to {role_data.role}")
 
     try:
         # Get the target user using cached service
@@ -296,15 +287,11 @@ async def update_user_role(
                 detail="Cannot modify your own role",
             )
 
-        logger.info(
-            f"[{request_id}] Updating role in Keycloak for user: {target_user.keycloak_id}"
-        )
+        logger.info(f"[{request_id}] Updating role in Keycloak for user: {target_user.keycloak_id}")
 
         # Update role in Keycloak first
         try:
-            auth_service.update_user_role(
-                user_id=target_user.keycloak_id, new_role=new_role
-            )
+            auth_service.update_user_role(user_id=target_user.keycloak_id, new_role=new_role)
         except HTTPException as e:
             logger.error(f"[{request_id}] Keycloak role update failed: {e.detail}")
             raise HTTPException(
@@ -312,18 +299,12 @@ async def update_user_role(
                 detail=f"Failed to update role in Keycloak: {e.detail}",
             )
 
-        logger.info(
-            f"[{request_id}] Updating role in database for user: {target_user.username}"
-        )
+        logger.info(f"[{request_id}] Updating role in database for user: {target_user.username}")
 
         # Update role in the database using cached service
-        updated_user = await user_service_cached.update_user_role(
-            user_id=user_id, new_role=new_role, db=db
-        )
+        updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
 
-        logger.info(
-            f"[{request_id}] Role update completed successfully for user: {target_user.username}"
-        )
+        logger.info(f"[{request_id}] Role update completed successfully for user: {target_user.username}")
         return updated_user
 
     except HTTPException as e:
@@ -357,9 +338,7 @@ async def invalidate_user_cache(
 
         await user_service_cached.invalidate_user_cache(user_id, keycloak_id)
 
-        logger.info(
-            f"Admin {current_user.username} invalidated cache for user {user_id}"
-        )
+        logger.info(f"Admin {current_user.username} invalidated cache for user {user_id}")
         return {"message": f"Cache invalidated for user {user_id}"}
     except Exception as e:
         logger.error(f"Failed to invalidate cache for user {user_id}: {str(e)}")
@@ -416,19 +395,14 @@ async def get_user_resolution(
     Get current user's default resolution setting
     """
     # Re-fetch from DB to ensure we get the latest value, not cached
-    result = await db.execute(
-        select(User).where(User.id == current_user.id)
-    )
+    result = await db.execute(select(User).where(User.id == current_user.id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     logger.info(f"Fetching resolution for user {user.username}: {user.default_resolution}")
-    
+
     return {
         "default_resolution": user.default_resolution,
     }
@@ -458,16 +432,11 @@ async def update_user_resolution(
             )
 
         # Re-fetch user from database to get a persistent instance
-        result = await db.execute(
-            select(User).where(User.id == current_user.id)
-        )
+        result = await db.execute(select(User).where(User.id == current_user.id))
         user = result.scalar_one_or_none()
-        
+
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
         # Update resolution
         user.default_resolution = resolution_data.default_resolution
@@ -475,9 +444,7 @@ async def update_user_resolution(
         await db.refresh(user)
 
         # Invalidate cache - THIS IS CRITICAL
-        await user_service_cached.invalidate_user_cache(
-            user.id, user.keycloak_id
-        )
+        await user_service_cached.invalidate_user_cache(user.id, user.keycloak_id)
 
         logger.info(
             f"[{request_id}] Resolution updated successfully for user: {user.username} - new value: {user.default_resolution}"
@@ -518,9 +485,7 @@ async def delete_account(
     5. Clear authentication cookies
     """
     request_id = str(uuid.uuid4())
-    logger.info(
-        f"[{request_id}] Starting account deletion for user: {current_user.username} (ID: {current_user.id})"
-    )
+    logger.info(f"[{request_id}] Starting account deletion for user: {current_user.username} (ID: {current_user.id})")
 
     try:
         # Step 1: Cancel any active Stripe subscription immediately
@@ -532,53 +497,37 @@ async def delete_account(
                 import stripe
 
                 stripe.Subscription.cancel(subscription.stripe_subscription_id)
-                logger.info(
-                    f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}"
-                )
+                logger.info(f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}")
         except Exception as e:
             # Log but don't fail — subscription cleanup is best-effort
-            logger.warning(
-                f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}"
-            )
+            logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
 
         # Step 2: Delete user from Keycloak
         auth_service.delete_user(current_user.keycloak_id)
-        logger.info(
-            f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak"
-        )
+        logger.info(f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak")
 
         # Step 3: Delete user from database (cascade handles all related records)
         # Re-fetch the user to get a persistent instance attached to this session
-        result = await db.execute(
-            select(User).where(User.id == current_user.id)
-        )
+        result = await db.execute(select(User).where(User.id == current_user.id))
         user_to_delete = result.scalar_one_or_none()
 
         if user_to_delete:
             await db.delete(user_to_delete)
             await db.commit()
-            logger.info(
-                f"[{request_id}] Deleted user {current_user.id} from database"
-            )
+            logger.info(f"[{request_id}] Deleted user {current_user.id} from database")
 
         # Step 4: Invalidate all user caches
         try:
-            await user_service_cached.invalidate_user_cache(
-                current_user.id, current_user.keycloak_id
-            )
+            await user_service_cached.invalidate_user_cache(current_user.id, current_user.keycloak_id)
         except Exception as e:
-            logger.warning(
-                f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}"
-            )
+            logger.warning(f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}")
 
         # Step 5: Clear authentication cookies
         from app.controllers.auth_controller import clear_auth_cookies
 
         clear_auth_cookies(response)
 
-        logger.info(
-            f"[{request_id}] Account deletion completed successfully for user: {current_user.username}"
-        )
+        logger.info(f"[{request_id}] Account deletion completed successfully for user: {current_user.username}")
 
         return {
             "message": "Account deleted successfully",
@@ -590,9 +539,7 @@ async def delete_account(
         raise
     except Exception as e:
         await db.rollback()
-        logger.error(
-            f"[{request_id}] Unexpected error during account deletion: {str(e)}"
-        )
+        logger.error(f"[{request_id}] Unexpected error during account deletion: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete account. Please try again or contact support.",

@@ -1,10 +1,11 @@
 import uuid
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.services.channels_service import ChannelsService
 from app.models.channel.channels_schemas import ChannelCreate, ChannelUpdate
 from app.models.user_models import User
+from app.services.channels_service import ChannelsService
 
 
 @pytest.mark.anyio
@@ -39,9 +40,7 @@ async def test_create_channel_integrity_error(db_session, test_user: User, monke
 
 
 @pytest.mark.anyio
-async def test_update_channel_db_failure_triggers_rollback(
-    db_session, test_user: User, monkeypatch
-):
+async def test_update_channel_db_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
     svc = ChannelsService()
     # Seed channel
     ch = await svc.create_channel(
@@ -62,16 +61,12 @@ async def test_update_channel_db_failure_triggers_rollback(
     monkeypatch.setattr(db_session, "rollback", tracking_rollback)
 
     with pytest.raises(Exception):
-        await svc.update_channel(
-            db_session, ch.id, ChannelUpdate(name="won't work"), test_user.id
-        )
+        await svc.update_channel(db_session, ch.id, ChannelUpdate(name="won't work"), test_user.id)
     assert rolled_back["yes"] is True
 
 
 @pytest.mark.anyio
-async def test_delete_channel_db_failure_triggers_rollback(
-    db_session, test_user: User, monkeypatch
-):
+async def test_delete_channel_db_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
     svc = ChannelsService()
     ch = await svc.create_channel(
         db_session,
@@ -97,9 +92,7 @@ async def test_delete_channel_db_failure_triggers_rollback(
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_name_exception_path(
-    db_session, test_user: User, monkeypatch
-):
+async def test_get_channel_by_name_exception_path(db_session, test_user: User, monkeypatch):
     svc = ChannelsService()
 
     # Patch execute to raise unexpected exception
@@ -116,9 +109,7 @@ async def test_get_channel_by_name_exception_path(
 async def test_update_channel_not_found_returns_none(db_session, test_user: User):
     svc = ChannelsService()
     # Non-existent channel
-    res = await svc.update_channel(
-        db_session, uuid.uuid4(), ChannelUpdate(name="x"), test_user.id
-    )
+    res = await svc.update_channel(db_session, uuid.uuid4(), ChannelUpdate(name="x"), test_user.id)
     assert res is None
 
 

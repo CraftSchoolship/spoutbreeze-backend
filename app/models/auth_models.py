@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-from typing import Optional
 
 
 class TokenRequest(BaseModel):
@@ -8,12 +7,8 @@ class TokenRequest(BaseModel):
     """
 
     code: str = Field(..., description="Authorization code from Keycloak")
-    redirect_uri: str = Field(
-        ..., description="Redirect URI used in the authorization request"
-    )
-    code_verifier: str = Field(
-        ..., description="Code verifier used in the authorization request"
-    )
+    redirect_uri: str = Field(..., description="Redirect URI used in the authorization request")
+    code_verifier: str = Field(..., description="Code verifier used in the authorization request")
 
 
 class TokenResponse(BaseModel):
@@ -24,7 +19,7 @@ class TokenResponse(BaseModel):
     access_token: str
     expires_in: int
     refresh_token: str
-    refresh_expires_in: Optional[int] = None
+    refresh_expires_in: int | None = None
     token_type: str = "Bearer"
     user_info: dict
 
@@ -43,14 +38,12 @@ class User(BaseModel):
 
 class UserInfo(BaseModel):
     preferred_username: str
-    email: Optional[str] = None
-    full_name: Optional[str] = None
+    email: str | None = None
+    full_name: str | None = None
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(
-        ..., description="Refresh token to obtain new access token"
-    )
+    refresh_token: str = Field(..., description="Refresh token to obtain new access token")
 
 
 class LogoutRequest(BaseModel):

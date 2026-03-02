@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Text, ForeignKey, Index, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.config.database.session import Base
 
 if TYPE_CHECKING:
@@ -17,34 +18,24 @@ if TYPE_CHECKING:
 class Connection(Base):
     __tablename__ = "connections"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    provider_user_id: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
+    provider_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     access_token: Mapped[str] = mapped_column(Text, nullable=False)
-    refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scopes: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=lambda: datetime.now(),
         onupdate=lambda: datetime.now(),
     )
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True, default=None
-    )
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
     # Relationship
-    user: Mapped["User"] = relationship("User", back_populates="connections")
+    user: Mapped[User] = relationship("User", back_populates="connections")
 
     # Partial unique index: one active (non-revoked) connection per provider per user.
     # Includes provider_user_id so that multiple pages (facebook_page) can coexist.

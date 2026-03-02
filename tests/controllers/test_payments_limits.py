@@ -1,17 +1,16 @@
-import pytest
-from httpx import AsyncClient
 from uuid import uuid4
 
-from app.main import app
+import pytest
+from httpx import AsyncClient
+
 from app.controllers.payment_controller import get_current_user
-from app.models.user_models import User
+from app.main import app
 from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
+from app.models.user_models import User
 
 
 @pytest.mark.anyio
-async def test_limits_free_plan(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_limits_free_plan(client: AsyncClient, db_session, test_user: User, mock_current_user):
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
         # Create a FREE subscription row to avoid hitting Stripe in tests
@@ -38,9 +37,7 @@ async def test_limits_free_plan(
 
 
 @pytest.mark.anyio
-async def test_limits_pro_plan(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_limits_pro_plan(client: AsyncClient, db_session, test_user: User, mock_current_user):
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
         sub = Subscription(
@@ -67,9 +64,7 @@ async def test_limits_pro_plan(
 
 
 @pytest.mark.anyio
-async def test_limits_enterprise_plan(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_limits_enterprise_plan(client: AsyncClient, db_session, test_user: User, mock_current_user):
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
         sub = Subscription(
@@ -95,9 +90,7 @@ async def test_limits_enterprise_plan(
 
 
 @pytest.mark.anyio
-async def test_limits_after_cancel_immediate_applies_free(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_limits_after_cancel_immediate_applies_free(client: AsyncClient, db_session, test_user: User, mock_current_user):
     """Downgrading from Pro should instantly apply Free limits when subscription is inactive."""
     app.dependency_overrides[get_current_user] = mock_current_user
     try:

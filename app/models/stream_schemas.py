@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 
 
 class RtmpEndpointBase(BaseModel):
@@ -27,9 +27,9 @@ class RtmpEndpointUpdate(BaseModel):
     Update model for stream settings
     """
 
-    title: Optional[str] = None
-    rtmp_url: Optional[str] = None
-    stream_key: Optional[str] = None
+    title: str | None = None
+    rtmp_url: str | None = None
+    stream_key: str | None = None
 
 
 class RtmpEndpointResponse(RtmpEndpointBase):
@@ -52,7 +52,7 @@ class RtmpEndpointListResponse(BaseModel):
     List response model for stream settings
     """
 
-    stream_settings: List[RtmpEndpointResponse]
+    stream_settings: list[RtmpEndpointResponse]
     total: int
 
     model_config = ConfigDict(from_attributes=True)

@@ -1,20 +1,19 @@
-import pytest
-from httpx import AsyncClient
 from uuid import uuid4
 
-from app.main import app
+import pytest
+from httpx import AsyncClient
+
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
+from app.main import app
 from app.models.stream_models import RtmpEndpoint
+from app.models.user_models import User
 
 
 class TestRtmpController:
     """Test cases for RTMP controller"""
 
     @pytest.mark.asyncio
-    async def test_create_rtmp_endpoint_success(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_rtmp_endpoint_success(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test successful rtmp endpoint creation"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -39,9 +38,7 @@ class TestRtmpController:
         assert "updated_at" in data
 
     @pytest.mark.asyncio
-    async def test_create_rtmp_endpoint_invalid_data(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_rtmp_endpoint_invalid_data(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test creating rtmp endpoint with invalid data"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -78,9 +75,7 @@ class TestRtmpController:
         assert data[0]["user_id"] == str(test_user.id)
 
     @pytest.mark.asyncio
-    async def test_get_rtmp_endpoints_by_user_no_endpoints(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_rtmp_endpoints_by_user_no_endpoints(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting rtmp endpoints when user has no endpoints"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -113,9 +108,7 @@ class TestRtmpController:
         assert data["user_id"] == str(test_user.id)
 
     @pytest.mark.asyncio
-    async def test_get_rtmp_endpoint_by_id_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_rtmp_endpoint_by_id_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting non-existent rtmp endpoint"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -142,9 +135,7 @@ class TestRtmpController:
             "rtmp_url": "rtmp://updated.example.com/live",
         }
 
-        response = await client.put(
-            f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data
-        )
+        response = await client.put(f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -169,9 +160,7 @@ class TestRtmpController:
             # Only updating title, leaving other fields unchanged
         }
 
-        response = await client.put(
-            f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data
-        )
+        response = await client.put(f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -180,18 +169,14 @@ class TestRtmpController:
         assert data["rtmp_url"] == test_stream_settings.rtmp_url  # Unchanged
 
     @pytest.mark.asyncio
-    async def test_update_rtmp_endpoint_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_update_rtmp_endpoint_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test updating non-existent rtmp endpoint"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
         non_existent_id = uuid4()
         update_data = {"title": "Updated Title"}
 
-        response = await client.put(
-            f"/api/stream-endpoint/{non_existent_id}", json=update_data
-        )
+        response = await client.put(f"/api/stream-endpoint/{non_existent_id}", json=update_data)
 
         assert response.status_code == 404
         data = response.json()
@@ -208,9 +193,7 @@ class TestRtmpController:
         """Test successful rtmp endpoint deletion"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
-        response = await client.delete(
-            f"/api/stream-endpoint/{test_stream_settings.id}"
-        )
+        response = await client.delete(f"/api/stream-endpoint/{test_stream_settings.id}")
 
         assert response.status_code == 200
         data = response.json()
@@ -218,9 +201,7 @@ class TestRtmpController:
         assert data["id"] == str(test_stream_settings.id)
 
     @pytest.mark.asyncio
-    async def test_delete_rtmp_endpoint_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_delete_rtmp_endpoint_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test deleting non-existent rtmp endpoint"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -258,18 +239,14 @@ class TestRtmpController:
 
         app.dependency_overrides[get_current_user] = mock_different_user
 
-        response = await client.delete(
-            f"/api/stream-endpoint/{test_stream_settings.id}"
-        )
+        response = await client.delete(f"/api/stream-endpoint/{test_stream_settings.id}")
 
         assert response.status_code == 404
         data = response.json()
         assert data["detail"] == "Stream settings not found"
 
     @pytest.mark.asyncio
-    async def test_create_multiple_rtmp_endpoints(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_multiple_rtmp_endpoints(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test creating multiple rtmp endpoints for the same user"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -298,9 +275,7 @@ class TestRtmpController:
         assert len(data) == 2
 
     @pytest.mark.asyncio
-    async def test_invalid_uuid_format(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_invalid_uuid_format(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test endpoints with invalid UUID format"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -322,9 +297,7 @@ class TestRtmpController:
 
         update_data: dict[str, str] = {}
 
-        response = await client.put(
-            f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data
-        )
+        response = await client.put(f"/api/stream-endpoint/{test_stream_settings.id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()

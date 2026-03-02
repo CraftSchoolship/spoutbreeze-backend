@@ -1,10 +1,9 @@
+from datetime import UTC, datetime
 from uuid import UUID
-from datetime import datetime, timezone
-from typing import Optional
 
+from app.models.bbb_schemas import CreateMeetingRequest, PluginManifests
 from app.models.event.event_models import Event
 from app.models.event.event_schemas import EventCreate
-from app.models.bbb_schemas import CreateMeetingRequest, PluginManifests
 
 
 class EventHelpers:
@@ -44,7 +43,7 @@ class EventHelpers:
     def prepare_bbb_meeting_request(
         event: EventCreate,
         new_event: Event,
-        plugin_manifests: Optional[str] = None,
+        plugin_manifests: str | None = None,
     ) -> CreateMeetingRequest:
         """
         Prepare BBB meeting request data.
@@ -58,9 +57,7 @@ class EventHelpers:
             welcome=f"Welcome to {event.title}",
             record=True,
             allow_start_stop_recording=True,
-            pluginManifests=[PluginManifests(url=plugin_manifests)]
-            if plugin_manifests
-            else None,
+            pluginManifests=[PluginManifests(url=plugin_manifests)] if plugin_manifests else None,
         )
         return meeting_request
 
@@ -72,5 +69,5 @@ class EventHelpers:
         Ensure the given datetime is timezone-aware.
         """
         if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         return dt

@@ -1,7 +1,8 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
 from app.models.event.event_models import EventStatus
 
 
@@ -11,7 +12,7 @@ class EventBase(BaseModel):
     """
 
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     occurs: str
     start_date: datetime
     end_date: datetime
@@ -24,7 +25,7 @@ class EventCreate(EventBase):
     Create model for event
     """
 
-    organizer_ids: Optional[List[UUID]] = []
+    organizer_ids: list[UUID] | None = []
     channel_name: str
 
 
@@ -33,15 +34,15 @@ class EventUpdate(BaseModel):
     Update model for event
     """
 
-    title: Optional[str] = None
-    description: Optional[str] = None
-    occurs: Optional[str] = None
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-    start_time: Optional[datetime] = None
-    organizer_ids: Optional[List[UUID]] = None
-    channel_id: Optional[UUID] = None
-    timezone: Optional[str] = None
+    title: str | None = None
+    description: str | None = None
+    occurs: str | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    start_time: datetime | None = None
+    organizer_ids: list[UUID] | None = None
+    channel_id: UUID | None = None
+    timezone: str | None = None
 
 
 class OrganizerResponse(BaseModel):
@@ -67,18 +68,18 @@ class EventResponse(EventBase):
     creator_id: UUID
     creator_first_name: str
     creator_last_name: str
-    organizers: List[OrganizerResponse] = []
+    organizers: list[OrganizerResponse] = []
     channel_id: UUID
-    meeting_id: Optional[str] = None
-    attendee_pw: Optional[str] = None
-    moderator_pw: Optional[str] = None
+    meeting_id: str | None = None
+    attendee_pw: str | None = None
+    moderator_pw: str | None = None
     meeting_created: bool
     timezone: str
     created_at: datetime
     updated_at: datetime
     status: EventStatus
-    actual_start_time: Optional[datetime] = None
-    actual_end_time: Optional[datetime] = None
+    actual_start_time: datetime | None = None
+    actual_end_time: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,7 +89,7 @@ class EventListResponse(BaseModel):
     List response model for event
     """
 
-    events: List[EventResponse]
+    events: list[EventResponse]
     total: int
 
     model_config = ConfigDict(from_attributes=True)

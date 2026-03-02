@@ -1,8 +1,10 @@
-import httpx
 import secrets
 from urllib.parse import urlencode
-from app.config.settings import get_settings
+
+import httpx
+
 from app.config.logger_config import get_logger
+from app.config.settings import get_settings
 
 settings = get_settings()
 logger = get_logger("FacebookAuth")
@@ -51,9 +53,7 @@ class FacebookAuth:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Token exchange failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Token exchange failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Token exchange error: {e}")
@@ -81,9 +81,7 @@ class FacebookAuth:
                 logger.info("[FacebookAuth] Exchanged for long-lived token")
                 return token_data
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Long-lived token exchange failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Long-lived token exchange failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Long-lived token exchange error: {e}")
@@ -115,9 +113,7 @@ class FacebookAuth:
                 logger.info("[FacebookAuth] Token refreshed successfully")
                 return token_data
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Token refresh failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Token refresh failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Token refresh error: {e}")
@@ -191,9 +187,7 @@ class FacebookAuth:
                 # Parse stream_url into rtmp_url + stream_key
                 rtmp_url, stream_key = self._parse_stream_url(stream_url)
 
-                logger.info(
-                    f"[FacebookAuth] LiveVideo created: {live_video_id} on {target_id}"
-                )
+                logger.info(f"[FacebookAuth] LiveVideo created: {live_video_id} on {target_id}")
 
                 return {
                     "live_video_id": live_video_id,
@@ -202,9 +196,7 @@ class FacebookAuth:
                     "stream_key": stream_key,
                 }
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Create live video failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Create live video failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Create live video error: {e}")
@@ -231,9 +223,7 @@ class FacebookAuth:
             logger.error(f"End live video failed: {e}")
             raise
 
-    async def get_live_video_status(
-        self, access_token: str, live_video_id: str
-    ) -> dict:
+    async def get_live_video_status(self, access_token: str, live_video_id: str) -> dict:
         """Get status of a live video.
 
         Returns:
@@ -275,4 +265,3 @@ class FacebookAuth:
         rtmp_url = stream_url[:split_point]
         stream_key = stream_url[split_point:]
         return (rtmp_url, stream_key)
-

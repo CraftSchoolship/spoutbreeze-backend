@@ -1,16 +1,16 @@
-from fastapi import APIRouter, Body, status, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.broadcaster_service import BroadcasterService
+from app.config.database.session import get_db
+from app.models.bbb_models import BbbMeeting
 from app.models.bbb_schemas import (
     BroadcasterRobot,
-    StartBroadcastResponse,
     BroadcastStatusResponse,
+    StartBroadcastResponse,
 )
 from app.services.bbb_service import BBBService
-from app.models.bbb_models import BbbMeeting
-from app.config.database.session import get_db
+from app.services.broadcaster_service import BroadcasterService
 
 router = APIRouter(prefix="/api/bbb", tags=["Broadcaster"])
 
@@ -27,9 +27,7 @@ async def start_broadcaster(
     payload: BroadcasterRobot = Body(...),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(BbbMeeting).where(BbbMeeting.meeting_id == payload.meeting_id)
-    )
+    result = await db.execute(select(BbbMeeting).where(BbbMeeting.meeting_id == payload.meeting_id))
     meeting = result.scalar_one_or_none()
 
     if not meeting:

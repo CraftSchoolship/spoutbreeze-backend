@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Query, HTTPException, Depends, Body
+import logging
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
 from app.config.facebook_auth import FacebookAuth
 from app.config.settings import get_settings
-from app.models.user_models import User
 from app.controllers.user_controller import get_current_user
+from app.models.user_models import User
 from app.services.connection_service import ConnectionService
-import logging
-from urllib.parse import urlencode
-from pydantic import BaseModel
-from typing import Optional
 
 router = APIRouter(prefix="/auth", tags=["Facebook Authentication"])
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ class GoLiveRequest(BaseModel):
     privacy: str = "EVERYONE"  # EVERYONE, ALL_FRIENDS, SELF
 
 
-# OAuth Callback 
+# OAuth Callback
 
 
 @router.get("/facebook/callback")
@@ -44,21 +45,13 @@ async def facebook_callback(
     settings = get_settings()
 
     if error:
-        logger.error(
-            f"[Facebook] OAuth error for user {current_user.id}: {error} - {error_reason}"
-        )
+        logger.error(f"[Facebook] OAuth error for user {current_user.id}: {error} - {error_reason}")
         error_params = urlencode({"tab": "integrations", "facebook_error": error})
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/settings?{error_params}", status_code=302
-        )
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{error_params}", status_code=302)
 
     if not code:
-        error_params = urlencode(
-            {"tab": "integrations", "facebook_error": "invalid_callback"}
-        )
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/settings?{error_params}", status_code=302
-        )
+        error_params = urlencode({"tab": "integrations", "facebook_error": "invalid_callback"})
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{error_params}", status_code=302)
 
     try:
         fb_auth = FacebookAuth()
@@ -67,9 +60,7 @@ async def facebook_callback(
         short_token_data = await fb_auth.exchange_code_for_token(code)
 
         # Exchange short-lived token for long-lived token (~60 days)
-        long_token_data = await fb_auth.exchange_for_long_lived_token(
-            short_token_data["access_token"]
-        )
+        long_token_data = await fb_auth.exchange_for_long_lived_token(short_token_data["access_token"])
 
         # Store user connection (provider="facebook")
         # Facebook doesn't return a refresh_token — the long-lived token IS the
@@ -117,28 +108,18 @@ async def facebook_callback(
                     scopes=FACEBOOK_SCOPES,
                     provider_user_id=page_id,
                 )
-                logger.info(
-                    f"[Facebook] Page '{page_name}' ({page_id}) saved for {current_user.id}"
-                )
+                logger.info(f"[Facebook] Page '{page_name}' ({page_id}) saved for {current_user.id}")
         except Exception as e:
             logger.warning(f"[Facebook] Failed to fetch/store pages: {e}")
             # Don't fail the entire callback — user token is already saved
 
-        success_params = urlencode(
-            {"tab": "integrations", "facebook_success": "true"}
-        )
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/settings?{success_params}", status_code=302
-        )
+        success_params = urlencode({"tab": "integrations", "facebook_success": "true"})
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{success_params}", status_code=302)
 
     except Exception as e:
         logger.error(f"[Facebook] Auth failed for user {current_user.id}: {e}")
-        error_params = urlencode(
-            {"tab": "integrations", "facebook_error": "auth_failed"}
-        )
-        return RedirectResponse(
-            url=f"{settings.frontend_url}/settings?{error_params}", status_code=302
-        )
+        error_params = urlencode({"tab": "integrations", "facebook_error": "auth_failed"})
+        return RedirectResponse(url=f"{settings.frontend_url}/settings?{error_params}", status_code=302)
 
 
 # Auth Endpoints
@@ -158,9 +139,7 @@ async def facebook_token_status(
     db: AsyncSession = Depends(get_db),
 ):
     """Return Facebook user connection status (no raw tokens)."""
-    status = await ConnectionService.get_connection_status(
-        db=db, user_id=str(current_user.id), provider="facebook"
-    )
+    status = await ConnectionService.get_connection_status(db=db, user_id=str(current_user.id), provider="facebook")
     return status
 
 
@@ -171,13 +150,9 @@ async def revoke_facebook_token(
 ):
     """Revoke the user's Facebook connection (user + all pages)."""
     # Revoke user connection
-    await ConnectionService.revoke_connection(
-        db=db, user_id=str(current_user.id), provider="facebook"
-    )
+    await ConnectionService.revoke_connection(db=db, user_id=str(current_user.id), provider="facebook")
     # Revoke all page connections
-    await ConnectionService.revoke_all_connections(
-        db=db, user_id=str(current_user.id), provider="facebook_page"
-    )
+    await ConnectionService.revoke_all_connections(db=db, user_id=str(current_user.id), provider="facebook_page")
     logger.info(f"[Facebook] All connections revoked for user {current_user.id}")
     return {"message": "Facebook connection revoked"}
 
@@ -191,9 +166,7 @@ async def facebook_pages(
     db: AsyncSession = Depends(get_db),
 ):
     """Return the user's connected Facebook Pages."""
-    pages = await ConnectionService.get_connections_by_provider(
-        db=db, user_id=str(current_user.id), provider="facebook_page"
-    )
+    pages = await ConnectionService.get_connections_by_provider(db=db, user_id=str(current_user.id), provider="facebook_page")
     return {
         "pages": [
             {
@@ -226,19 +199,17 @@ async def facebook_go_live(
     # Determine which token to use based on target
     if body.target == "me":
         # User profile stream — use the user's facebook token
-        token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook"
-        )
+        token = await ConnectionService.get_decrypted_token(db=db, user_id=user_id, provider="facebook")
         if not token:
-            raise HTTPException(
-                status_code=404, detail="No Facebook connection found. Please connect first."
-            )
+            raise HTTPException(status_code=404, detail="No Facebook connection found. Please connect first.")
         access_token = token["access_token"]
         target_id = "me"
     else:
         # Page stream — use the page's token
         token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook_page",
+            db=db,
+            user_id=user_id,
+            provider="facebook_page",
             provider_user_id=body.target,
         )
         if not token:
@@ -258,9 +229,7 @@ async def facebook_go_live(
             privacy=body.privacy,
         )
 
-        logger.info(
-            f"[Facebook] Go live: {result['live_video_id']} for user {user_id} on {target_id}"
-        )
+        logger.info(f"[Facebook] Go live: {result['live_video_id']} for user {user_id} on {target_id}")
 
         return {
             "live_video_id": result["live_video_id"],
@@ -286,12 +255,12 @@ async def facebook_end_live(
     user_id = str(current_user.id)
 
     if target == "me":
-        token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook"
-        )
+        token = await ConnectionService.get_decrypted_token(db=db, user_id=user_id, provider="facebook")
     else:
         token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook_page",
+            db=db,
+            user_id=user_id,
+            provider="facebook_page",
             provider_user_id=target,
         )
 

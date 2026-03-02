@@ -22,9 +22,7 @@ class SubscriptionGuard:
     """Guard class to check subscription status and enforce limits"""
 
     @staticmethod
-    async def get_user_with_subscription(
-        request: Request, db: AsyncSession = Depends(get_db)
-    ) -> tuple[User, Subscription]:
+    async def get_user_with_subscription(request: Request, db: AsyncSession = Depends(get_db)) -> tuple[User, Subscription]:
         """
         Get current user with their subscription
         Creates a free subscription if user doesn't have one
@@ -32,9 +30,7 @@ class SubscriptionGuard:
         user = await get_current_user(request, db)
 
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
         subscription = await PaymentService.get_user_subscription(user, db)
 
@@ -63,9 +59,7 @@ class SubscriptionGuard:
             )
 
     @staticmethod
-    async def check_trial_expired(
-        subscription: Subscription, db: AsyncSession | None = None
-    ) -> None:
+    async def check_trial_expired(subscription: Subscription, db: AsyncSession | None = None) -> None:
         """Check if trial period has expired.
         When the 14-day free trial expires, the subscription is permanently
         marked as expired and the user can never get a free trial again.
@@ -94,9 +88,7 @@ class SubscriptionGuard:
             )
 
     @staticmethod
-    async def check_stream_quality(
-        subscription: Subscription, requested_quality: str
-    ) -> None:
+    async def check_stream_quality(subscription: Subscription, requested_quality: str) -> None:
         """Check if requested stream quality is allowed for the plan"""
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
@@ -124,9 +116,7 @@ class SubscriptionGuard:
             )
 
     @staticmethod
-    async def check_concurrent_streams(
-        subscription: Subscription, current_stream_count: int
-    ) -> None:
+    async def check_concurrent_streams(subscription: Subscription, current_stream_count: int) -> None:
         """Check if user can start another concurrent stream"""
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
@@ -142,9 +132,7 @@ class SubscriptionGuard:
             )
 
     @staticmethod
-    async def check_stream_duration(
-        subscription: Subscription, stream_duration_hours: float
-    ) -> None:
+    async def check_stream_duration(subscription: Subscription, stream_duration_hours: float) -> None:
         """Check if stream duration exceeds plan limit"""
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
@@ -213,9 +201,7 @@ class SubscriptionGuard:
 
 
 # Dependency functions for easy use in routes
-async def require_active_subscription(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> tuple[User, Subscription]:
+async def require_active_subscription(request: Request, db: AsyncSession = Depends(get_db)) -> tuple[User, Subscription]:
     """
     Dependency to require an active subscription
     """
@@ -225,9 +211,7 @@ async def require_active_subscription(
     return user, subscription
 
 
-async def require_paid_subscription(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> tuple[User, Subscription]:
+async def require_paid_subscription(request: Request, db: AsyncSession = Depends(get_db)) -> tuple[User, Subscription]:
     """
     Dependency to require a paid subscription (Pro or Enterprise)
     """
@@ -238,9 +222,7 @@ async def require_paid_subscription(
     return user, subscription
 
 
-async def require_enterprise_subscription(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> tuple[User, Subscription]:
+async def require_enterprise_subscription(request: Request, db: AsyncSession = Depends(get_db)) -> tuple[User, Subscription]:
     """
     Dependency to require Enterprise subscription
     """

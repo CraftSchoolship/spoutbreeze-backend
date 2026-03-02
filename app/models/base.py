@@ -1,6 +1,7 @@
-from app.config.database.session import Base
-from sqlalchemy import Table, Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, Table
 from sqlalchemy.dialects.postgresql import UUID
+
+from app.config.database.session import Base
 
 # Association table for many-to-many relationship between Uusers and events
 user_event_association = Table(

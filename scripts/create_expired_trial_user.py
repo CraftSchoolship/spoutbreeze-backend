@@ -14,23 +14,20 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
 from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakPostError
+from sqlalchemy import select
 
 from app.config.database.session import SessionLocal
 from app.config.settings import get_settings, verify_ssl
-
-# Import all models to ensure they're registered with SQLAlchemy
-from app.models.user_models import User
 from app.models.payment_models import (
     Subscription,
     SubscriptionPlan,
     SubscriptionStatus,
-    Transaction,
 )
-from app.models.twitch.twitch_models import TwitchToken
 
+# Import all models to ensure they're registered with SQLAlchemy
+from app.models.user_models import User
 
 DEFAULT_EMAIL = "expired_trial_user@test.com"
 DEFAULT_USERNAME = "expired_trial_user"
@@ -64,7 +61,7 @@ async def create_expired_trial_user(
     )
 
     # ── Step 1: Create in Keycloak ──────────────────────────────────
-    print(f"\n🔑 Creating user in Keycloak …")
+    print("\n🔑 Creating user in Keycloak …")
     keycloak_id = None
 
     try:
@@ -94,20 +91,18 @@ async def create_expired_trial_user(
                 keycloak_id = users[0]["id"]
                 print(f"   ℹ️  Keycloak user already exists — ID: {keycloak_id}")
             else:
-                print(f"   ❌ Keycloak user exists but could not be looked up.")
+                print("   ❌ Keycloak user exists but could not be looked up.")
                 return
         else:
             print(f"   ❌ Keycloak error: {e}")
             return
 
     # ── Step 2 & 3: Create in DB + expired subscription ─────────────
-    print(f"\n💾 Creating user & expired subscription in DB …")
+    print("\n💾 Creating user & expired subscription in DB …")
 
     async with SessionLocal() as session:
         # Check if user already in DB
-        result = await session.execute(
-            select(User).where(User.keycloak_id == keycloak_id)
-        )
+        result = await session.execute(select(User).where(User.keycloak_id == keycloak_id))
         user = result.scalar_one_or_none()
 
         if user:
@@ -132,13 +127,11 @@ async def create_expired_trial_user(
         user.has_used_free_trial = True
 
         # Check for existing subscription
-        result = await session.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
-        )
+        result = await session.execute(select(Subscription).where(Subscription.user_id == user.id))
         existing_sub = result.scalar_one_or_none()
 
         if existing_sub:
-            print(f"   ℹ️  Subscription already exists — updating to expired …")
+            print("   ℹ️  Subscription already exists — updating to expired …")
             existing_sub.plan = SubscriptionPlan.FREE.value
             existing_sub.status = SubscriptionStatus.EXPIRED.value
             existing_sub.trial_start = datetime.utcnow() - timedelta(days=30)
@@ -152,6 +145,7 @@ async def create_expired_trial_user(
 
             # We need a stripe_customer_id — use a placeholder since this is a test user
             import stripe
+
             stripe.api_key = settings.stripe_secret_key
 
             try:
@@ -166,7 +160,7 @@ async def create_expired_trial_user(
                 )
                 stripe_customer_id = customer.id
                 print(f"   ✅ Stripe customer created — ID: {stripe_customer_id}")
-            except Exception as e:
+            except Exception:
                 # If Stripe is not configured, use a placeholder
                 stripe_customer_id = f"cus_test_{uuid.uuid4().hex[:14]}"
                 print(f"   ⚠️  Stripe not available, using placeholder: {stripe_customer_id}")
@@ -188,19 +182,19 @@ async def create_expired_trial_user(
 
     # ── Summary ─────────────────────────────────────────────────────
     print(f"\n{'=' * 60}")
-    print(f"  ✅ Test user with expired free trial is ready!")
+    print("  ✅ Test user with expired free trial is ready!")
     print(f"{'=' * 60}")
     print(f"  Email:             {email}")
     print(f"  Username:          {username}")
     print(f"  Password:          {password}")
     print(f"  Keycloak ID:       {keycloak_id}")
-    print(f"  Free trial:        EXPIRED (used & cannot be restarted)")
-    print(f"  has_used_free_trial: True")
+    print("  Free trial:        EXPIRED (used & cannot be restarted)")
+    print("  has_used_free_trial: True")
     print(f"{'=' * 60}")
-    print(f"\n  👉 Log in with these credentials to verify that:")
-    print(f"     • The free plan button shows 'Trial Used' (disabled)")
-    print(f"     • The user cannot start a new free trial")
-    print(f"     • Upgrading to Pro/Enterprise still works\n")
+    print("\n  👉 Log in with these credentials to verify that:")
+    print("     • The free plan button shows 'Trial Used' (disabled)")
+    print("     • The user cannot start a new free trial")
+    print("     • Upgrading to Pro/Enterprise still works\n")
 
 
 async def main():

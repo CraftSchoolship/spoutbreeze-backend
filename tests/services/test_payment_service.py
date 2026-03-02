@@ -1,19 +1,16 @@
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch
 from uuid import uuid4
-from datetime import datetime, timedelta
 
-from app.services.payment_service import PaymentService
+import pytest
+
 from app.models.payment_models import (
+    PLAN_LIMITS,
     Subscription,
-    Transaction,
-    WebhookEvent,
     SubscriptionPlan,
     SubscriptionStatus,
-    TransactionType,
-    PLAN_LIMITS,
+    WebhookEvent,
 )
-from app.models.user_models import User
+from app.services.payment_service import PaymentService
 
 
 class TestGetPlanFromPriceId:
@@ -84,6 +81,7 @@ class TestPriceIdValidation:
         mock_settings.stripe_enterprise_price_id = "price_ent_123"
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await PaymentService.create_checkout_session(
                 user=test_user,
@@ -103,6 +101,7 @@ class TestPriceIdValidation:
         mock_settings.stripe_enterprise_price_id = ""
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await PaymentService.create_checkout_session(
                 user=test_user,
@@ -148,11 +147,10 @@ class TestWebhookDeduplication:
         )
 
         # Verify only one webhook event record exists
-        from sqlalchemy import select, func
+        from sqlalchemy import func, select
+
         count = await db_session.execute(
-            select(func.count()).select_from(WebhookEvent).where(
-                WebhookEvent.stripe_event_id == event_id
-            )
+            select(func.count()).select_from(WebhookEvent).where(WebhookEvent.stripe_event_id == event_id)
         )
         assert count.scalar() == 1
 
@@ -172,6 +170,7 @@ class TestCancelSubscription:
         await db_session.commit()
 
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await PaymentService.cancel_subscription(
                 user=test_user,
@@ -183,6 +182,7 @@ class TestCancelSubscription:
     @pytest.mark.anyio
     async def test_cancel_nonexistent_subscription_raises_404(self, db_session, test_user):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await PaymentService.cancel_subscription(
                 user=test_user,

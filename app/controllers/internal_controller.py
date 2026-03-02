@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Header, Depends
+import logging
+import os
+
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
 from app.services.connection_service import ConnectionService
-import os
-import logging
 
 router = APIRouter(prefix="/api/internal", tags=["Internal"])
 logger = logging.getLogger("InternalAPI")
@@ -34,9 +36,7 @@ async def get_provider_token(
         )
 
     try:
-        token_data = await ConnectionService.get_valid_token(
-            db=db, user_id=user_id, provider=provider
-        )
+        token_data = await ConnectionService.get_valid_token(db=db, user_id=user_id, provider=provider)
 
         if not token_data:
             logger.info(f"[Internal] No active {provider} token for user {user_id}")

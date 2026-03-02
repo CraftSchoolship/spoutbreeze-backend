@@ -1,41 +1,39 @@
+import time
+from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
+from apscheduler.triggers.cron import CronTrigger  # type: ignore
+from apscheduler.triggers.interval import IntervalTrigger  # type: ignore
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from contextlib import asynccontextmanager
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
-from apscheduler.triggers.cron import CronTrigger  # type: ignore
-from apscheduler.triggers.interval import IntervalTrigger  # type: ignore
-import time
 
-from app.services.bbb_service import BBBService
-from app.services.stream_cleanup_service import StreamCleanupService
-from app.services.token_refresh_service import TokenRefreshService
-
-# Import models to ensure they are registered with SQLAlchemy
-from app.models import user_models, payment_models, connection_model  # noqa: F401
-
-from app.controllers.auth_controller import router as auth_router
-from app.controllers.bbb_controller import router as bbb_router
-from app.controllers.broadcaster_controller import router as broadcaster_router
-from app.controllers.user_controller import router as user_router
-from app.controllers.rtmp_controller import router as stream_router
-from app.controllers.channels_controller import router as channels_router
-from app.controllers.event_controller import router as event_router
-from app.controllers.health_controller import router as health_router
-from app.controllers.twitch_controller import router as twitch_router
-from app.controllers.youtube_controller import router as youtube_router
-from app.controllers.facebook_controller import router as facebook_router
-from app.controllers.payment_controller import router as payment_router
-from app.controllers.internal_controller import router as internal_router
-
+from app.config.database.session import SessionLocal
 
 # from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
-from app.config.settings import get_settings
 from app.config.redis_config import cache
-from app.config.database.session import SessionLocal
+from app.config.settings import get_settings
+from app.controllers.auth_controller import router as auth_router
+from app.controllers.bbb_controller import router as bbb_router
+from app.controllers.broadcaster_controller import router as broadcaster_router
+from app.controllers.channels_controller import router as channels_router
+from app.controllers.event_controller import router as event_router
+from app.controllers.facebook_controller import router as facebook_router
+from app.controllers.health_controller import router as health_router
+from app.controllers.internal_controller import router as internal_router
+from app.controllers.payment_controller import router as payment_router
+from app.controllers.rtmp_controller import router as stream_router
+from app.controllers.twitch_controller import router as twitch_router
+from app.controllers.user_controller import router as user_router
+from app.controllers.youtube_controller import router as youtube_router
+
+# Import models to ensure they are registered with SQLAlchemy
+from app.models import connection_model, payment_models, user_models  # noqa: F401
+from app.services.bbb_service import BBBService
+from app.services.stream_cleanup_service import StreamCleanupService
+from app.services.token_refresh_service import TokenRefreshService
 
 logger = get_logger("Main")
 setting = get_settings()
@@ -197,9 +195,7 @@ async def custom_swagger_ui_html():
 
 
 # Parse CORS origins from settings (comma-separated string)
-origins = [
-    origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()
-]
+origins = [origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()]
 
 # Configure CORS with both explicit origins and regex pattern support
 app.add_middleware(
@@ -270,5 +266,3 @@ app.include_router(payment_router)
 #     except WebSocketDisconnect:
 #         chat_manager.disconnect(websocket)
 #         logger.info("[Chat] Client disconnected")
-
-

@@ -1,15 +1,15 @@
 import uuid
-import pytest
 from datetime import datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.channels_service import ChannelsService
-from app.models.user_models import User
 from app.models.channel.channels_model import Channel
 from app.models.channel.channels_schemas import ChannelCreate, ChannelUpdate
 from app.models.event.event_models import Event, EventStatus
+from app.models.user_models import User
+from app.services.channels_service import ChannelsService
 
 
 @pytest.mark.anyio
@@ -45,9 +45,7 @@ async def test_get_channels_by_user_id(db_session: AsyncSession, test_user: User
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_id_found_and_not_found(
-    db_session: AsyncSession, test_user: User
-):
+async def test_get_channel_by_id_found_and_not_found(db_session: AsyncSession, test_user: User):
     # Create a channel
     ch = Channel(
         id=uuid.uuid4(),
@@ -101,9 +99,7 @@ async def test_get_channels_all(db_session: AsyncSession, test_user: User):
 
 
 @pytest.mark.anyio
-async def test_get_channel_by_name_found_and_not_found(
-    db_session: AsyncSession, test_user: User
-):
+async def test_get_channel_by_name_found_and_not_found(db_session: AsyncSession, test_user: User):
     desired = f"unique-{uuid.uuid4()}"
     ch = Channel(
         id=uuid.uuid4(),
@@ -141,9 +137,7 @@ async def test_update_channel_success(db_session: AsyncSession, test_user: User)
     await db_session.commit()
 
     svc = ChannelsService()
-    updated = await svc.update_channel(
-        db_session, ch.id, ChannelUpdate(name="new-name"), test_user.id
-    )
+    updated = await svc.update_channel(db_session, ch.id, ChannelUpdate(name="new-name"), test_user.id)
     assert updated is not None
     assert updated.name == "new-name"
 
@@ -154,9 +148,7 @@ async def test_update_channel_success(db_session: AsyncSession, test_user: User)
 
 
 @pytest.mark.anyio
-async def test_update_channel_not_owner_returns_none(
-    db_session: AsyncSession, test_user: User
-):
+async def test_update_channel_not_owner_returns_none(db_session: AsyncSession, test_user: User):
     # Another user and a channel owned by them
     other = User(
         id=uuid.uuid4(),
@@ -182,16 +174,12 @@ async def test_update_channel_not_owner_returns_none(
     await db_session.commit()
 
     svc = ChannelsService()
-    res = await svc.update_channel(
-        db_session, ch.id, ChannelUpdate(name="x"), test_user.id
-    )
+    res = await svc.update_channel(db_session, ch.id, ChannelUpdate(name="x"), test_user.id)
     assert res is None
 
 
 @pytest.mark.anyio
-async def test_delete_channel_success_and_idempotent(
-    db_session: AsyncSession, test_user: User
-):
+async def test_delete_channel_success_and_idempotent(db_session: AsyncSession, test_user: User):
     ch_id = uuid.uuid4()
     db_session.add(
         Channel(
@@ -215,18 +203,14 @@ async def test_delete_channel_success_and_idempotent(
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_channel_not_found(
-    db_session: AsyncSession, test_user: User
-):
+async def test_get_channel_recordings_channel_not_found(db_session: AsyncSession, test_user: User):
     svc = ChannelsService()
     with pytest.raises(Exception):
         await svc.get_channel_recordings(db_session, uuid.uuid4(), test_user.id)
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_wrong_owner(
-    db_session: AsyncSession, test_user: User
-):
+async def test_get_channel_recordings_wrong_owner(db_session: AsyncSession, test_user: User):
     # Create channel owned by other user
     other = User(
         id=uuid.uuid4(),
@@ -256,9 +240,7 @@ async def test_get_channel_recordings_wrong_owner(
 
 
 @pytest.mark.anyio
-async def test_get_channel_recordings_aggregates(
-    db_session: AsyncSession, test_user: User, monkeypatch
-):
+async def test_get_channel_recordings_aggregates(db_session: AsyncSession, test_user: User, monkeypatch):
     # Create channel owned by test_user
     ch = Channel(
         id=uuid.uuid4(),
@@ -327,6 +309,4 @@ async def test_get_channel_recordings_aggregates(
     svc = ChannelsService()
     out = await svc.get_channel_recordings(db_session, ch.id, test_user.id)
     assert out["total_recordings"] == 2
-    assert isinstance(out["recordings"], list) and {
-        r["id"] for r in out["recordings"]
-    } == {"r1", "r2"}
+    assert isinstance(out["recordings"], list) and {r["id"] for r in out["recordings"]} == {"r1", "r2"}

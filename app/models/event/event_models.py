@@ -1,14 +1,16 @@
 from __future__ import annotations
+
+import enum
 import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, ForeignKey, Boolean, Enum
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.config.database.session import Base
 from app.models.channel.channels_model import Channel
-import enum
 
 if TYPE_CHECKING:
     from app.models.user_models import User
@@ -34,24 +36,14 @@ class Event(Base):
     title: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(String, nullable=True)
     occurs: Mapped[str] = mapped_column(String, nullable=False)
-    start_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    start_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     timezone: Mapped[str] = mapped_column(String, nullable=False, default="UTC")
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False)
 
-    creator_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    creator_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     channel_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("channels.id", ondelete="CASCADE"),
@@ -60,18 +52,10 @@ class Event(Base):
     meeting_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     moderator_pw: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
     attendee_pw: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
-    meeting_created: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
-    status: Mapped[EventStatus] = mapped_column(
-        Enum(EventStatus), default=EventStatus.SCHEDULED, nullable=False
-    )
-    actual_start_time: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    actual_end_time: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    meeting_created: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[EventStatus] = mapped_column(Enum(EventStatus), default=EventStatus.SCHEDULED, nullable=False)
+    actual_start_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    actual_end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Use string references instead of direct class references
     creator: Mapped[User] = relationship(

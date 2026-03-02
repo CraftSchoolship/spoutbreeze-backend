@@ -1,29 +1,29 @@
-import time
 import json
-import requests
+import time
+from datetime import datetime, timedelta
+from typing import Any
 from urllib.parse import urlencode
-from typing import Dict, Any, Union, Optional
+from uuid import UUID
+
+import requests
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
-from datetime import datetime, timedelta
+from sqlalchemy import delete, select, update  # noqa: F401
+from sqlalchemy.ext.asyncio import AsyncSession
 
-
+from app.config.logger_config import logger
 from app.config.settings import get_settings
-from app.utils.bbb_helpers import parse_xml_response, generate_checksum
+from app.models.bbb_models import BbbMeeting
 from app.models.bbb_schemas import (
     CreateMeetingRequest,
-    JoinMeetingRequest,
     EndMeetingRequest,
     GetMeetingInfoRequest,
-    IsMeetingRunningRequest,
     GetRecordingRequest,
+    IsMeetingRunningRequest,
+    JoinMeetingRequest,
 )
-from app.models.bbb_models import BbbMeeting
 from app.models.event.event_models import Event
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete  # noqa: F401
-from uuid import UUID
-from app.config.logger_config import logger
+from app.utils.bbb_helpers import generate_checksum, parse_xml_response
 
 
 class BBBService:
@@ -37,8 +37,8 @@ class BBBService:
         request: CreateMeetingRequest,
         user_id: UUID,
         db: AsyncSession,
-        event_id: Optional[UUID] = None,
-    ) -> Dict[str, Any]:
+        event_id: UUID | None = None,
+    ) -> dict[str, Any]:
         """Create a new BBB meeting."""
         # Generate a meeting ID if not provided
         if not request.meeting_id:
@@ -123,7 +123,7 @@ class BBBService:
     def join_meeting(
         self,
         request: JoinMeetingRequest,
-    ) -> Union[Dict[str, Any], RedirectResponse]:
+    ) -> dict[str, Any] | RedirectResponse:
         """Join a BBB meeting."""
         # Create base params
         processed_params = {}
@@ -142,8 +142,7 @@ class BBBService:
         if request.pluginManifests:
             # Convert Pydantic models to dict first, then to JSON string
             plugin_dicts = [
-                plugin.model_dump() if hasattr(plugin, "model_dump") else plugin.dict()
-                for plugin in request.pluginManifests
+                plugin.model_dump() if hasattr(plugin, "model_dump") else plugin.dict() for plugin in request.pluginManifests
             ]
             processed_params["pluginManifests"] = json.dumps(plugin_dicts)
 
@@ -162,9 +161,7 @@ class BBBService:
         else:
             return {"join_url": join_url}
 
-    async def end_meeting(
-        self, request: EndMeetingRequest, db: AsyncSession
-    ) -> Dict[str, Any]:
+    async def end_meeting(self, request: EndMeetingRequest, db: AsyncSession) -> dict[str, Any]:
         """End a BBB meeting and update database."""
         params = {"meetingID": request.meeting_id, "password": request.password}
 
@@ -178,19 +175,19 @@ class BBBService:
             meeting = result.scalars().first()
 
             if meeting:
-                setattr(meeting, "has_been_forcibly_ended", "true")
+                meeting.has_been_forcibly_ended = "true"
                 await db.commit()
                 logger.info(f"Meeting ended and database updated: {request.meeting_id}")
 
         return response
 
-    def is_meeting_running(self, request: IsMeetingRunningRequest) -> Dict[str, Any]:
+    def is_meeting_running(self, request: IsMeetingRunningRequest) -> dict[str, Any]:
         """Check if a meeting is running."""
         params = {"meetingID": request.meeting_id}
 
         return self._call_bbb_api("isMeetingRunning", params)
 
-    def get_meeting_info(self, request: GetMeetingInfoRequest) -> Dict[str, Any]:
+    def get_meeting_info(self, request: GetMeetingInfoRequest) -> dict[str, Any]:
         """Get detailed information about a meeting."""
         if request.password:
             params = {"meetingID": request.meeting_id, "password": request.password}
@@ -199,11 +196,11 @@ class BBBService:
 
         return self._call_bbb_api("getMeetingInfo", params)
 
-    def get_meetings(self) -> Dict[str, Any]:
+    def get_meetings(self) -> dict[str, Any]:
         """Get the list of all meetings."""
         return self._call_bbb_api("getMeetings", {})
 
-    def get_recordings(self, request: GetRecordingRequest) -> Dict[str, Any]:
+    def get_recordings(self, request: GetRecordingRequest) -> dict[str, Any]:
         """Get the list of all recordings."""
         params = {
             "meetingID": request.meeting_id,
@@ -233,11 +230,7 @@ class BBBService:
         if request.pluginManifests:
             # Convert Pydantic models to dict first, then to JSON string
             plugin_dicts = [
-                (
-                    plugin.model_dump()
-                    if hasattr(plugin, "model_dump")
-                    else plugin.model_dump()
-                )
+                (plugin.model_dump() if hasattr(plugin, "model_dump") else plugin.model_dump())
                 for plugin in request.pluginManifests
             ]
             processed_params["pluginManifests"] = json.dumps(plugin_dicts)
@@ -249,9 +242,7 @@ class BBBService:
 
     def get_is_meeting_running_url(self, meeting_id: str) -> str:
         """Generate a URL to check if a meeting is running."""
-        checksum = generate_checksum(
-            "isMeetingRunning", f"meetingID={meeting_id}", self.secret
-        )
+        checksum = generate_checksum("isMeetingRunning", f"meetingID={meeting_id}", self.secret)
         return f"{self.server_base_url}isMeetingRunning?meetingID={meeting_id}&checksum={checksum}"
 
     # Service for the plugin to get meeting id and mod password
@@ -259,12 +250,10 @@ class BBBService:
         self,
         internal_meeting_id: str,
         db: AsyncSession,
-    ) -> Optional[BbbMeeting]:
+    ) -> BbbMeeting | None:
         """Get the meeting details by internal meeting ID."""
         try:
-            stmt = select(BbbMeeting).where(
-                BbbMeeting.internal_meeting_id == internal_meeting_id
-            )
+            stmt = select(BbbMeeting).where(BbbMeeting.internal_meeting_id == internal_meeting_id)
             result = await db.execute(stmt)
             meeting = result.scalars().first()
 
@@ -283,7 +272,7 @@ class BBBService:
         meeting_id: str,
         db: AsyncSession,
         is_ended: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Update meeting details in the database."""
         try:
             # Find meeting in the database
@@ -297,40 +286,30 @@ class BBBService:
 
             # If we know the meeting has ended (from callback), update directly
             if is_ended:
-                setattr(meeting, "has_been_forcibly_ended", "true")
+                meeting.has_been_forcibly_ended = "true"
                 await db.commit()
                 logger.info(f"Meeting marked as ended via callback: {meeting_id}")
                 return {"success": True}
 
             # Try to get info from BBB API
             try:
-                meeting_info_request = GetMeetingInfoRequest(
-                    meeting_id=meeting_id, password=""
-                )
+                meeting_info_request = GetMeetingInfoRequest(meeting_id=meeting_id, password="")
                 meeting_info = self.get_meeting_info(request=meeting_info_request)
 
                 # Update meeting status fields
-                meeting.has_user_joined = meeting_info.get(
-                    "hasUserJoined", meeting.has_user_joined
-                )
-                meeting.has_been_forcibly_ended = meeting_info.get(
-                    "hasBeenForciblyEnded", meeting.has_been_forcibly_ended
-                )
+                meeting.has_user_joined = meeting_info.get("hasUserJoined", meeting.has_user_joined)
+                meeting.has_been_forcibly_ended = meeting_info.get("hasBeenForciblyEnded", meeting.has_been_forcibly_ended)
                 await db.commit()
-                logger.info(
-                    f"Meeting updated with fresh info from BBB API: {meeting_id}"
-                )
+                logger.info(f"Meeting updated with fresh info from BBB API: {meeting_id}")
                 return {"success": True}
 
             except HTTPException as e:
                 # Handle case when meeting doesn't exist in BBB anymore
                 if "notFound" in str(e.detail):
                     # Meeting has likely ended
-                    setattr(meeting, "has_been_forcibly_ended", "true")
+                    meeting.has_been_forcibly_ended = "true"
                     await db.commit()
-                    logger.info(
-                        f"Meeting not found in BBB, marked as ended: {meeting_id}"
-                    )
+                    logger.info(f"Meeting not found in BBB, marked as ended: {meeting_id}")
                     return {
                         "success": True,
                         "message": "Meeting marked as ended (not found in BBB)",
@@ -348,19 +327,15 @@ class BBBService:
         self,
         meeting_id: str,
         db: AsyncSession,
-        event_id: Optional[UUID] = None,
-    ) -> Dict[str, Any]:
+        event_id: UUID | None = None,
+    ) -> dict[str, Any]:
         """Callback endpoint for when a BBB meeting ends."""
         try:
             # Use the update_meeting_status method with is_ended=True flag
-            result = await self.update_meeting_status(
-                meeting_id=meeting_id, db=db, is_ended=True
-            )
+            result = await self.update_meeting_status(meeting_id=meeting_id, db=db, is_ended=True)
 
             if result.get("success"):
-                logger.info(
-                    f"Meeting ended callback processed successfully: {meeting_id}"
-                )
+                logger.info(f"Meeting ended callback processed successfully: {meeting_id}")
                 # If event_id is provided, call the event service directly
                 if event_id:
                     try:
@@ -373,24 +348,16 @@ class BBBService:
                             from app.services.event_service import EventService
 
                             event_service = EventService()
-                            await event_service.end_event(
-                                event_id=event_id, db=db, user_id=event.creator_id
-                            )
-                            logger.info(
-                                f"Event ended successfully via direct service call: {event_id}"
-                            )
+                            await event_service.end_event(event_id=event_id, db=db, user_id=event.creator_id)
+                            logger.info(f"Event ended successfully via direct service call: {event_id}")
                         else:
-                            logger.warning(
-                                f"Event not found or creator_id missing for meeting: {meeting_id}"
-                            )
+                            logger.warning(f"Event not found or creator_id missing for meeting: {meeting_id}")
                     except Exception as e:
                         logger.error(f"Error ending event via direct service call: {e}")
 
                 return {"success": True, "message": "Meeting marked as ended"}
             else:
-                logger.warning(
-                    f"Failed to process meeting end callback: {result.get('error')}"
-                )
+                logger.warning(f"Failed to process meeting end callback: {result.get('error')}")
                 return result
 
         except Exception as e:
@@ -408,12 +375,7 @@ class BBBService:
                 # Convert Pydantic models to dict first, then to JSON string
                 if isinstance(value, list):
                     plugin_dicts = [
-                        (
-                            plugin.model_dump()
-                            if hasattr(plugin, "model_dump")
-                            else plugin.dict()
-                        )
-                        for plugin in value
+                        (plugin.model_dump() if hasattr(plugin, "model_dump") else plugin.dict()) for plugin in value
                     ]
                     processed_params[key] = json.dumps(plugin_dicts)
             else:
@@ -421,25 +383,19 @@ class BBBService:
                 processed_params[key] = value
 
         # Sort parameters alphabetically as BBB requires
-        query_string = urlencode(
-            [(k, v) for k, v in processed_params.items() if v is not None]
-        )
+        query_string = urlencode([(k, v) for k, v in processed_params.items() if v is not None])
 
         # Generate checksum
         checksum = generate_checksum(api_call, query_string, self.secret)
 
         # Append checksum to parameters
-        full_url = (
-            f"{self.server_base_url}{api_call}?{query_string}&checksum={checksum}"
-        )
+        full_url = f"{self.server_base_url}{api_call}?{query_string}&checksum={checksum}"
         logger.debug(f"BBB API URL: {full_url}")
 
         # Make the API call
         response = requests.get(full_url)
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code, detail="BBB API request failed"
-            )
+            raise HTTPException(status_code=response.status_code, detail="BBB API request failed")
 
         # Parse XML response
         return parse_xml_response(response.content, api_call)

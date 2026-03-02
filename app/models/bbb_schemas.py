@@ -1,5 +1,6 @@
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
 
 
 # Payload sent to external broadcaster
@@ -25,7 +26,7 @@ class BroadcasterRobot(BaseModel):
     stream_key: str
     password: str
     platform: str
-    resolution: Optional[str] = Field(
+    resolution: str | None = Field(
         default=None,
         description="Requested stream resolution (e.g. 360p, 480p, 720p, 1080p, 1440p, 4K)",
     )
@@ -38,19 +39,19 @@ class PluginManifests(BaseModel):
 # BBB related request/response models (trimmed to what is currently used)
 class CreateMeetingRequest(BaseModel):
     name: str
-    meeting_id: Optional[str] = None
-    record_id: Optional[str] = None
-    attendee_pw: Optional[str] = None
-    moderator_pw: Optional[str] = None
-    welcome: Optional[str] = None
-    max_participants: Optional[int] = None
-    duration: Optional[int] = None
-    record: Optional[bool] = None
-    auto_start_recording: Optional[bool] = None
-    allow_start_stop_recording: Optional[bool] = None
-    moderator_only_message: Optional[str] = None
-    logo_url: Optional[str] = None
-    pluginManifests: Optional[List[PluginManifests]] = None
+    meeting_id: str | None = None
+    record_id: str | None = None
+    attendee_pw: str | None = None
+    moderator_pw: str | None = None
+    welcome: str | None = None
+    max_participants: int | None = None
+    duration: int | None = None
+    record: bool | None = None
+    auto_start_recording: bool | None = None
+    allow_start_stop_recording: bool | None = None
+    moderator_only_message: str | None = None
+    logo_url: str | None = None
+    pluginManifests: list[PluginManifests] | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -76,11 +77,11 @@ class CreateMeetingRequest(BaseModel):
 
 class JoinMeetingRequest(BaseModel):
     meeting_id: str
-    full_name: Optional[str] = None
+    full_name: str | None = None
     password: str
-    user_id: Optional[str] = None
-    redirect: Optional[bool] = True
-    pluginManifests: Optional[List[PluginManifests]] = None
+    user_id: str | None = None
+    redirect: bool | None = True
+    pluginManifests: list[PluginManifests] | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -99,7 +100,7 @@ class JoinMeetingRequest(BaseModel):
 class EndMeetingRequest(BaseModel):
     meeting_id: str
     password: str
-    pluginManifests: Optional[List[PluginManifests]] = None
+    pluginManifests: list[PluginManifests] | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -130,7 +131,7 @@ class GetMeetingInfoRequest(BaseModel):
 
 class IsMeetingRunningRequest(BaseModel):
     meeting_id: str
-    pluginManifests: Optional[List[PluginManifests]] = None
+    pluginManifests: list[PluginManifests] | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -147,46 +148,46 @@ class GetRecordingRequest(BaseModel):
 
 
 class MeetingAttendee(BaseModel):
-    userID: Optional[str] = None
-    fullName: Optional[str] = None
-    role: Optional[str] = None
-    isPresenter: Optional[bool] = None
-    isListeningOnly: Optional[bool] = None
-    hasJoinedVoice: Optional[bool] = None
-    hasVideo: Optional[bool] = None
-    clientType: Optional[str] = None
+    userID: str | None = None
+    fullName: str | None = None
+    role: str | None = None
+    isPresenter: bool | None = None
+    isListeningOnly: bool | None = None
+    hasJoinedVoice: bool | None = None
+    hasVideo: bool | None = None
+    clientType: str | None = None
 
 
 class Meeting(BaseModel):
     meetingID: str
     meetingName: str
-    createTime: Optional[str] = None
-    createDate: Optional[str] = None
-    voiceBridge: Optional[str] = None
-    dialNumber: Optional[str] = None
-    attendeePW: Optional[str] = None
-    moderatorPW: Optional[str] = None
-    running: Optional[bool] = None
-    duration: Optional[int] = None
-    hasUserJoined: Optional[bool] = None
-    recording: Optional[bool] = None
-    hasBeenForciblyEnded: Optional[bool] = None
-    startTime: Optional[int] = None
-    endTime: Optional[int] = None
-    participantCount: Optional[int] = None
-    listenerCount: Optional[int] = None
-    voiceParticipantCount: Optional[int] = None
-    videoCount: Optional[int] = None
-    maxUsers: Optional[int] = None
-    moderatorCount: Optional[int] = None
-    attendees: Optional[List[MeetingAttendee]] = None
+    createTime: str | None = None
+    createDate: str | None = None
+    voiceBridge: str | None = None
+    dialNumber: str | None = None
+    attendeePW: str | None = None
+    moderatorPW: str | None = None
+    running: bool | None = None
+    duration: int | None = None
+    hasUserJoined: bool | None = None
+    recording: bool | None = None
+    hasBeenForciblyEnded: bool | None = None
+    startTime: int | None = None
+    endTime: int | None = None
+    participantCount: int | None = None
+    listenerCount: int | None = None
+    voiceParticipantCount: int | None = None
+    videoCount: int | None = None
+    maxUsers: int | None = None
+    moderatorCount: int | None = None
+    attendees: list[MeetingAttendee] | None = None
 
 
 class BroadcasterStreamInfo(BaseModel):
     stream_id: str
-    pod_name: Optional[str] = None
+    pod_name: str | None = None
     status: str
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 class StartBroadcastResponse(BaseModel):
@@ -194,18 +195,18 @@ class StartBroadcastResponse(BaseModel):
     message: str
     join_url: str
     stream: BroadcasterStreamInfo
-    meeting_info: Dict[str, Any]
+    meeting_info: dict[str, Any]
 
 
 class BroadcastStatusResponse(BaseModel):
     stream_id: str
     status: str
-    pod_name: Optional[str] = None
-    bbb_health_check_url: Optional[str] = None
-    bbb_server_url: Optional[str] = None
-    created_at: Optional[str] = None
-    streams: Optional[List[StreamConfig]] = None
-    video_bitrate: Optional[str] = None
-    audio_bitrate: Optional[str] = None
-    fps: Optional[int] = None
-    resolution: Optional[str] = None
+    pod_name: str | None = None
+    bbb_health_check_url: str | None = None
+    bbb_server_url: str | None = None
+    created_at: str | None = None
+    streams: list[StreamConfig] | None = None
+    video_bitrate: str | None = None
+    audio_bitrate: str | None = None
+    fps: int | None = None
+    resolution: str | None = None

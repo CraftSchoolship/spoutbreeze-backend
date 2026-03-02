@@ -43,9 +43,7 @@ def verify_plugin_auth(x_internal_auth: str = Header(None, alias="X-Internal-Aut
 
 async def _get_user_id_from_meeting(meeting_id: str, db: AsyncSession) -> str:
     """Look up user_id from a meeting_id."""
-    result = await db.execute(
-        select(BbbMeeting).where(BbbMeeting.meeting_id == meeting_id)
-    )
+    result = await db.execute(select(BbbMeeting).where(BbbMeeting.meeting_id == meeting_id))
     meeting = result.scalar_one_or_none()
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
@@ -86,9 +84,7 @@ def join_meeting(request: JoinMeetingRequest = Body(...)):
 
 
 @router.post("/end")
-async def end_meeting(
-    request: EndMeetingRequest = Body(...), db: AsyncSession = Depends(get_db)
-):
+async def end_meeting(request: EndMeetingRequest = Body(...), db: AsyncSession = Depends(get_db)):
     """End a BBB meeting."""
     result = await bbb_service.end_meeting(request=request, db=db)
     return result
@@ -119,9 +115,7 @@ async def get_recordings(request: GetRecordingRequest = Body(...)):
 
 
 @router.get("/callback/meeting-ended")
-async def meeting_ended_callback(
-    request: Request, event_id: UUID, db: AsyncSession = Depends(get_db)
-):
+async def meeting_ended_callback(request: Request, event_id: UUID, db: AsyncSession = Depends(get_db)):
     """Callback endpoint for when a BBB meeting ends."""
     try:
         params = dict(request.query_params)
@@ -129,9 +123,7 @@ async def meeting_ended_callback(
         if not meeting_id:
             return {"error": "Missing meetingID in query parameters"}
 
-        result = await bbb_service.meeting_ended_callback(
-            meeting_id=meeting_id, db=db, event_id=event_id
-        )
+        result = await bbb_service.meeting_ended_callback(meeting_id=meeting_id, db=db, event_id=event_id)
         return result
     except Exception as e:
         return {"error": str(e)}
@@ -147,9 +139,7 @@ async def cleanup_old_meetings(
     This is a background task that runs asynchronously.
     """
     background_tasks.add_task(bbb_service._clean_up_meetings_background, days=days)
-    return {
-        "message": f"Cleanup task for meetings older than {days} days has been started."
-    }
+    return {"message": f"Cleanup task for meetings older than {days} days has been started."}
 
 
 @router.get("/proxy/stream-endpoints")
@@ -179,9 +169,7 @@ async def get_meeting_by_internal_id(
     Get a BBB meeting by its internal meeting ID.
     """
     try:
-        meeting = await bbb_service.get_meeting_by_internal_id(
-            internal_meeting_id=internal_meeting_id, db=db
-        )
+        meeting = await bbb_service.get_meeting_by_internal_id(internal_meeting_id=internal_meeting_id, db=db)
         if not meeting:
             raise HTTPException(status_code=404, detail="Meeting not found")
         return meeting
@@ -201,9 +189,7 @@ async def facebook_status_for_plugin(
     """Check if the meeting owner has an active Facebook connection."""
     user_id = await _get_user_id_from_meeting(meeting_id, db)
 
-    user_status = await ConnectionService.get_connection_status(
-        db=db, user_id=user_id, provider="facebook"
-    )
+    user_status = await ConnectionService.get_connection_status(db=db, user_id=user_id, provider="facebook")
     return {
         "connected": user_status.get("has_token", False),
         "is_expired": user_status.get("is_expired", False),
@@ -219,9 +205,7 @@ async def facebook_pages_for_plugin(
     """Return the meeting owner's connected Facebook Pages."""
     user_id = await _get_user_id_from_meeting(meeting_id, db)
 
-    pages = await ConnectionService.get_connections_by_provider(
-        db=db, user_id=user_id, provider="facebook_page"
-    )
+    pages = await ConnectionService.get_connections_by_provider(db=db, user_id=user_id, provider="facebook_page")
     return {
         "pages": [
             {
@@ -251,12 +235,12 @@ async def facebook_go_live_for_plugin(
 
     # Get the right token
     if body.target == "me":
-        token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook"
-        )
+        token = await ConnectionService.get_decrypted_token(db=db, user_id=user_id, provider="facebook")
     else:
         token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook_page",
+            db=db,
+            user_id=user_id,
+            provider="facebook_page",
             provider_user_id=body.target,
         )
 
@@ -275,10 +259,7 @@ async def facebook_go_live_for_plugin(
             privacy=body.privacy,
         )
 
-        logger.info(
-            f"[BBB Plugin] Facebook go-live: {result['live_video_id']} "
-            f"for user {user_id} on {body.target}"
-        )
+        logger.info(f"[BBB Plugin] Facebook go-live: {result['live_video_id']} for user {user_id} on {body.target}")
 
         return {
             "live_video_id": result["live_video_id"],
@@ -308,12 +289,12 @@ async def facebook_end_live_for_plugin(
     user_id = await _get_user_id_from_meeting(body.meeting_id, db)
 
     if body.target == "me":
-        token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook"
-        )
+        token = await ConnectionService.get_decrypted_token(db=db, user_id=user_id, provider="facebook")
     else:
         token = await ConnectionService.get_decrypted_token(
-            db=db, user_id=user_id, provider="facebook_page",
+            db=db,
+            user_id=user_id,
+            provider="facebook_page",
             provider_user_id=body.target,
         )
 

@@ -72,16 +72,10 @@ class ConnectionService:
         """Create or update a platform connection (upsert)."""
 
         now = datetime.now()
-        expires_at = now + timedelta(
-            seconds=token_data.get("expires_in", 3600)
-        )
+        expires_at = now + timedelta(seconds=token_data.get("expires_in", 3600))
 
         encrypted_access = encrypt_token(token_data["access_token"])
-        encrypted_refresh = (
-            encrypt_token(token_data["refresh_token"])
-            if token_data.get("refresh_token")
-            else None
-        )
+        encrypted_refresh = encrypt_token(token_data["refresh_token"]) if token_data.get("refresh_token") else None
 
         # Check for ANY existing connection for this user+provider (regardless of revoked status)
         # For providers with provider_user_id (e.g. facebook_page), also match by that
@@ -93,11 +87,7 @@ class ConnectionService:
         if provider_user_id is not None:
             conditions.append(Connection.provider_user_id == provider_user_id)
 
-        stmt = (
-            select(Connection)
-            .where(*conditions)
-            .order_by(Connection.created_at.desc())
-        )
+        stmt = select(Connection).where(*conditions).order_by(Connection.created_at.desc())
         result = await db.execute(stmt)
         existing = result.scalars().first()
 
@@ -166,9 +156,7 @@ class ConnectionService:
         user_id = connection.user_id
 
         if not connection.refresh_token:
-            logger.warning(
-                f"[{provider}] Cannot refresh — no refresh token for user {user_id}"
-            )
+            logger.warning(f"[{provider}] Cannot refresh — no refresh token for user {user_id}")
             return False
 
         refresher = _REFRESHERS.get(provider)
@@ -184,18 +172,14 @@ class ConnectionService:
             connection.access_token = encrypt_token(token_data["access_token"])
             if token_data.get("refresh_token"):
                 connection.refresh_token = encrypt_token(token_data["refresh_token"])
-            connection.expires_at = now + timedelta(
-                seconds=token_data.get("expires_in", 3600)
-            )
+            connection.expires_at = now + timedelta(seconds=token_data.get("expires_in", 3600))
             connection.updated_at = now
             await db.commit()
 
             logger.info(f"[{provider}] Token refreshed for user {user_id}")
             return True
         except Exception as e:
-            logger.error(
-                f"[{provider}] Token refresh failed for user {user_id}: {e}"
-            )
+            logger.error(f"[{provider}] Token refresh failed for user {user_id}: {e}")
             return False
 
     @classmethod
@@ -228,9 +212,7 @@ class ConnectionService:
 
         return {
             "access_token": decrypt_token(connection.access_token),
-            "refresh_token": decrypt_token(connection.refresh_token)
-            if connection.refresh_token
-            else None,
+            "refresh_token": decrypt_token(connection.refresh_token) if connection.refresh_token else None,
             "expires_at": connection.expires_at.isoformat(),
         }
 
@@ -256,10 +238,7 @@ class ConnectionService:
         )
         result = await db.execute(stmt)
         await db.commit()
-        logger.info(
-            f"[{provider}] Connection revoked for user {user_id} "
-            f"({result.rowcount} rows)"
-        )
+        logger.info(f"[{provider}] Connection revoked for user {user_id} ({result.rowcount} rows)")
         return result.rowcount
 
     @classmethod
@@ -285,10 +264,7 @@ class ConnectionService:
         )
         result = await db.execute(stmt)
         await db.commit()
-        logger.info(
-            f"[{provider}] All connections revoked for user {user_id} "
-            f"({result.rowcount} rows)"
-        )
+        logger.info(f"[{provider}] All connections revoked for user {user_id} ({result.rowcount} rows)")
         return result.rowcount
 
     @classmethod
@@ -332,11 +308,7 @@ class ConnectionService:
         if provider_user_id is not None:
             conditions.append(Connection.provider_user_id == provider_user_id)
 
-        stmt = (
-            select(Connection)
-            .where(*conditions)
-            .order_by(Connection.created_at.desc())
-        )
+        stmt = select(Connection).where(*conditions).order_by(Connection.created_at.desc())
         result = await db.execute(stmt)
         connection = result.scalars().first()
 
@@ -345,9 +317,7 @@ class ConnectionService:
 
         return {
             "access_token": decrypt_token(connection.access_token),
-            "refresh_token": decrypt_token(connection.refresh_token)
-            if connection.refresh_token
-            else None,
+            "refresh_token": decrypt_token(connection.refresh_token) if connection.refresh_token else None,
             "expires_at": connection.expires_at.isoformat(),
         }
 

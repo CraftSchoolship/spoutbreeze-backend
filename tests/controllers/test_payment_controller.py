@@ -1,18 +1,19 @@
+from datetime import datetime, timedelta
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
-from uuid import uuid4
-from datetime import datetime, timedelta
 
-from app.main import app
 from app.controllers.payment_controller import get_current_user
-from app.models.user_models import User
+from app.main import app
 from app.models.payment_models import (
     Subscription,
-    Transaction,
     SubscriptionPlan,
     SubscriptionStatus,
+    Transaction,
     TransactionType,
 )
+from app.models.user_models import User
 
 
 @pytest.mark.anyio
@@ -45,9 +46,7 @@ async def test_get_plans_has_required_fields(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_get_subscription_creates_free_for_new_user(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_get_subscription_creates_free_for_new_user(client: AsyncClient, db_session, test_user: User, mock_current_user):
     """Should auto-create a free subscription for users without one"""
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
@@ -62,9 +61,7 @@ async def test_get_subscription_creates_free_for_new_user(
 
 
 @pytest.mark.anyio
-async def test_get_transactions_empty(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_get_transactions_empty(client: AsyncClient, db_session, test_user: User, mock_current_user):
     """Should return empty list when no transactions exist"""
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
@@ -76,9 +73,7 @@ async def test_get_transactions_empty(
 
 
 @pytest.mark.anyio
-async def test_get_transactions_with_data(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_get_transactions_with_data(client: AsyncClient, db_session, test_user: User, mock_current_user):
     """Should return transactions when they exist"""
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
@@ -133,9 +128,7 @@ async def test_webhook_invalid_signature(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_get_usage_stats(
-    client: AsyncClient, db_session, test_user: User, mock_current_user
-):
+async def test_get_usage_stats(client: AsyncClient, db_session, test_user: User, mock_current_user):
     """Should return usage statistics"""
     app.dependency_overrides[get_current_user] = mock_current_user
     try:

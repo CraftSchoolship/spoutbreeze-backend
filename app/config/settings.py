@@ -1,10 +1,10 @@
-from pydantic_settings import BaseSettings
-from functools import lru_cache
-from keycloak import KeycloakOpenID, KeycloakAdmin
 import os
+from functools import lru_cache
+
 import urllib3
-from typing import Union
+from keycloak import KeycloakAdmin, KeycloakOpenID
 from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -85,9 +85,7 @@ class Settings(BaseSettings):
     stripe_secret_key: str
     stripe_publishable_key: str
     stripe_webhook_secret: str
-    stripe_free_price_id: str = (
-        ""  # Optional, for Free plan (if you create one in Stripe)
-    )
+    stripe_free_price_id: str = ""  # Optional, for Free plan (if you create one in Stripe)
     stripe_pro_price_id: str = ""  # Will be configured from Stripe dashboard
     stripe_enterprise_price_id: str = ""  # Will be configured from Stripe dashboard
 
@@ -101,7 +99,7 @@ class Settings(BaseSettings):
     model_config = {"env_file": ".env"}
 
 
-@lru_cache()
+@lru_cache
 def get_settings():
     return Settings()
 
@@ -110,7 +108,7 @@ settings = get_settings()
 
 # Determine SSL verification method
 cert_path = "/app/certs/keycloak.pem"
-verify_ssl: Union[str, bool]
+verify_ssl: str | bool
 if os.path.exists(cert_path):
     # Use the certificate file if it exists
     verify_ssl = cert_path

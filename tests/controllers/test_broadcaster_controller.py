@@ -1,6 +1,7 @@
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
-from uuid import uuid4
 
 
 # Autouse fixture: every test gets the mocked broadcaster
@@ -8,9 +9,7 @@ from uuid import uuid4
 def mock_broadcaster(monkeypatch):
     from app.controllers import broadcaster_controller
 
-    async def fake_start_broadcasting(
-        meeting_id, rtmp_url, stream_key, password, bbb_service
-    ):
+    async def fake_start_broadcasting(meeting_id, rtmp_url, stream_key, password, bbb_service):
         return {
             "status": "success",
             "message": "Broadcaster started successfully",
@@ -416,9 +415,7 @@ class TestBroadcasterController:
             ),
         ],
     )
-    async def test_broadcaster_success_variants(
-        self, client: AsyncClient, meeting_id, rtmp_url, stream_key, password
-    ):
+    async def test_broadcaster_success_variants(self, client: AsyncClient, meeting_id, rtmp_url, stream_key, password):
         payload = {
             "meeting_id": meeting_id,
             "rtmp_url": rtmp_url,
@@ -508,7 +505,5 @@ class TestBroadcasterController:
             "stream_key": "k",
             "password": "p",
         }
-        results = await asyncio.gather(
-            *[client.post("/api/bbb/broadcaster", json=payload) for _ in range(3)]
-        )
+        results = await asyncio.gather(*[client.post("/api/bbb/broadcaster", json=payload) for _ in range(3)])
         assert all(r.status_code == 200 for r in results)

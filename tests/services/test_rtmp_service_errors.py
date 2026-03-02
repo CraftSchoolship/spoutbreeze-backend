@@ -1,16 +1,15 @@
 import uuid
+
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.services.rtmp_service import RtmpEndpointService
 from app.models.stream_schemas import CreateRtmpEndpointCreate, RtmpEndpointUpdate
 from app.models.user_models import User
+from app.services.rtmp_service import RtmpEndpointService
 
 
 @pytest.mark.anyio
-async def test_create_rtmp_endpoints_integrity_error_stream_key(
-    db_session, test_user: User, monkeypatch
-):
+async def test_create_rtmp_endpoints_integrity_error_stream_key(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
 
     payload = CreateRtmpEndpointCreate(
@@ -37,9 +36,7 @@ async def test_create_rtmp_endpoints_integrity_error_stream_key(
 
 
 @pytest.mark.anyio
-async def test_create_rtmp_endpoints_integrity_error_title(
-    db_session, test_user: User, monkeypatch
-):
+async def test_create_rtmp_endpoints_integrity_error_title(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
 
     payload = CreateRtmpEndpointCreate(
@@ -49,24 +46,17 @@ async def test_create_rtmp_endpoints_integrity_error_title(
     )
 
     async def failing_commit():
-        raise IntegrityError(
-            "stmt", {}, Exception("UNIQUE constraint failed: stream_endpoints.title")
-        )
+        raise IntegrityError("stmt", {}, Exception("UNIQUE constraint failed: stream_endpoints.title"))
 
     monkeypatch.setattr(db_session, "commit", failing_commit)
 
     with pytest.raises(ValueError) as ei:
         await svc.create_rtmp_endpoints(payload, test_user.id, db_session)
-    assert (
-        "Title already exists" in str(ei.value)
-        or "unique constraint" in str(ei.value).lower()
-    )
+    assert "Title already exists" in str(ei.value) or "unique constraint" in str(ei.value).lower()
 
 
 @pytest.mark.anyio
-async def test_create_rtmp_endpoints_generic_error_rolls_back(
-    db_session, test_user: User, monkeypatch
-):
+async def test_create_rtmp_endpoints_generic_error_rolls_back(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
     payload = CreateRtmpEndpointCreate(
         title="Generic",
@@ -91,9 +81,7 @@ async def test_create_rtmp_endpoints_generic_error_rolls_back(
 
 
 @pytest.mark.anyio
-async def test_update_rtmp_endpoints_commit_failure_triggers_rollback(
-    db_session, test_user: User, monkeypatch
-):
+async def test_update_rtmp_endpoints_commit_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
     created = await svc.create_rtmp_endpoints(
         CreateRtmpEndpointCreate(
@@ -126,9 +114,7 @@ async def test_update_rtmp_endpoints_commit_failure_triggers_rollback(
 
 
 @pytest.mark.anyio
-async def test_delete_rtmp_endpoints_commit_failure_triggers_rollback(
-    db_session, test_user: User, monkeypatch
-):
+async def test_delete_rtmp_endpoints_commit_failure_triggers_rollback(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
     created = await svc.create_rtmp_endpoints(
         CreateRtmpEndpointCreate(
@@ -170,9 +156,7 @@ async def test_get_all_rtmp_endpoints_execute_failure(db_session, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_get_rtmp_endpoints_by_user_id_execute_failure(
-    db_session, test_user: User, monkeypatch
-):
+async def test_get_rtmp_endpoints_by_user_id_execute_failure(db_session, test_user: User, monkeypatch):
     svc = RtmpEndpointService()
 
     async def failing_execute(*a, **k):

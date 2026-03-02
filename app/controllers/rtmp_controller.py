@@ -1,17 +1,17 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
-from uuid import UUID
 
 from app.config.database.session import get_db
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
 from app.models.stream_schemas import (
-    RtmpEndpointResponse,
-    RtmpEndpointUpdate,
     CreateRtmpEndpointCreate,
     RtmpEndpointDeleteResponse,
+    RtmpEndpointResponse,
+    RtmpEndpointUpdate,
 )
+from app.models.user_models import User
 from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
 
 router = APIRouter(prefix="/api/stream-endpoint", tags=["Stream Endpoints"])
@@ -49,11 +49,11 @@ async def create_rtmp_endpoints(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/", response_model=List[RtmpEndpointResponse])
+@router.get("/", response_model=list[RtmpEndpointResponse])
 async def get_rtmp_endpoints(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> List[RtmpEndpointResponse]:
+) -> list[RtmpEndpointResponse]:
     """
     Get all stream settings for the current user.
 
@@ -74,11 +74,11 @@ async def get_rtmp_endpoints(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/all", response_model=List[RtmpEndpointResponse])
+@router.get("/all", response_model=list[RtmpEndpointResponse])
 async def get_all_rtmp_endpoints(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> List[RtmpEndpointResponse]:
+) -> list[RtmpEndpointResponse]:
     """
     Get all stream settings for all users.
 

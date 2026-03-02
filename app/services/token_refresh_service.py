@@ -30,9 +30,7 @@ class TokenRefreshService:
     @staticmethod
     async def refresh_expiring_tokens(db: AsyncSession) -> None:
         """Scan for active connections expiring soon and refresh them."""
-        threshold = datetime.now() + timedelta(
-            seconds=BACKGROUND_REFRESH_THRESHOLD_SECONDS
-        )
+        threshold = datetime.now() + timedelta(seconds=BACKGROUND_REFRESH_THRESHOLD_SECONDS)
 
         stmt = (
             select(Connection)
@@ -50,9 +48,7 @@ class TokenRefreshService:
             logger.debug("[TokenRefresh] No tokens need refreshing")
             return
 
-        logger.info(
-            f"[TokenRefresh] Found {len(connections)} token(s) to refresh"
-        )
+        logger.info(f"[TokenRefresh] Found {len(connections)} token(s) to refresh")
 
         success_count = 0
         fail_count = 0
@@ -64,7 +60,4 @@ class TokenRefreshService:
             else:
                 fail_count += 1
 
-        logger.info(
-            f"[TokenRefresh] Refresh complete: "
-            f"{success_count} succeeded, {fail_count} failed"
-        )
+        logger.info(f"[TokenRefresh] Refresh complete: {success_count} succeeded, {fail_count} failed")

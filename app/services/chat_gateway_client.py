@@ -1,7 +1,7 @@
-import os
-import httpx
 import logging
-from typing import Optional
+import os
+
+import httpx
 
 logger = logging.getLogger("ChatGatewayClient")
 
@@ -21,7 +21,7 @@ class ChatGatewayClient:
         user_id: str,
         username: str,
         message: str,
-        message_id: Optional[str] = None,
+        message_id: str | None = None,
     ) -> None:
         """Forward incoming platform message to gateway for normalization"""
         url = f"{self.base_url}/messages/incoming"
@@ -42,14 +42,12 @@ class ChatGatewayClient:
         except Exception as e:
             logger.error(f"[Gateway] Failed to forward message: {e}")
 
-    async def connect_twitch(self, user_id: str, meeting_id: str = None) -> None:
+    async def connect_twitch(self, user_id: str, meeting_id: str | None = None) -> None:
         """Start Twitch IRC connection for user"""
         url = f"{self.base_url}/platforms/twitch/connect"
         headers = {"X-Internal-Auth": self.secret}
 
-        logger.info(
-            f"[Gateway Client] Calling {url} with user_id={user_id}, meeting_id={meeting_id}"
-        )
+        logger.info(f"[Gateway Client] Calling {url} with user_id={user_id}, meeting_id={meeting_id}")
 
         try:
             async with httpx.AsyncClient(timeout=10, verify=False) as client:
@@ -84,14 +82,12 @@ class ChatGatewayClient:
         except Exception as e:
             logger.error(f"[Gateway] Failed to stop Twitch: {e}")
 
-    async def connect_youtube(self, user_id: str, meeting_id: str = None) -> None:
+    async def connect_youtube(self, user_id: str, meeting_id: str | None = None) -> None:
         """Start YouTube polling for user"""
         url = f"{self.base_url}/platforms/youtube/connect"
         headers = {"X-Internal-Auth": self.secret}
 
-        logger.info(
-            f"[Gateway Client] Calling {url} with user_id={user_id}, meeting_id={meeting_id}"
-        )
+        logger.info(f"[Gateway Client] Calling {url} with user_id={user_id}, meeting_id={meeting_id}")
 
         try:
             async with httpx.AsyncClient(timeout=10, verify=False) as client:

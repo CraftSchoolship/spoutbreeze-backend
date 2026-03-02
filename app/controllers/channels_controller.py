@@ -1,18 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
+from app.config.logger_config import logger
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
 from app.models.channel.channels_schemas import (
     ChannelCreate,
-    ChannelResponse,
     ChannelListResponse,
+    ChannelResponse,
     ChannelUpdate,
 )
+from app.models.user_models import User
 from app.services.cached.channels_service_cached import ChannelsServiceCached
-from app.config.logger_config import logger
 
 router = APIRouter(prefix="/api/channels", tags=["Channels"])
 channels_service = ChannelsServiceCached()

@@ -1,7 +1,7 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 
 
 class ChannelBase(BaseModel):
@@ -25,7 +25,7 @@ class ChannelUpdate(BaseModel):
     Update model for channel
     """
 
-    name: Optional[str] = None
+    name: str | None = None
 
 
 class ChannelResponse(ChannelBase):
@@ -48,7 +48,7 @@ class ChannelListResponse(BaseModel):
     List response model for channel
     """
 
-    channels: List[ChannelResponse]
+    channels: list[ChannelResponse]
     total: int
 
     model_config = ConfigDict(from_attributes=True)

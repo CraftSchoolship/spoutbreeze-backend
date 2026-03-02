@@ -102,48 +102,30 @@ class Subscription(Base):
     )
 
     # Stripe references
-    stripe_customer_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
-    stripe_subscription_id: Mapped[str | None] = mapped_column(
-        String, nullable=True, unique=True, index=True
-    )
+    stripe_customer_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
     stripe_price_id: Mapped[str | None] = mapped_column(String, nullable=True)
     stripe_product_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Subscription details
-    plan: Mapped[str] = mapped_column(
-        String, default=SubscriptionPlan.FREE.value, nullable=False
-    )
-    status: Mapped[str] = mapped_column(
-        String, default=SubscriptionStatus.TRIALING.value, nullable=False
-    )
+    plan: Mapped[str] = mapped_column(String, default=SubscriptionPlan.FREE.value, nullable=False)
+    status: Mapped[str] = mapped_column(String, default=SubscriptionStatus.TRIALING.value, nullable=False)
 
     # Trial information
     trial_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     trial_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Subscription period
-    current_period_start: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
-    current_period_end: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Cancellation
-    cancel_at_period_end: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     user: Mapped[User] = relationship("User", back_populates="subscription")
@@ -199,9 +181,7 @@ class Transaction(Base):
     )
 
     # Stripe references
-    stripe_payment_intent_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
+    stripe_payment_intent_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     stripe_invoice_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Transaction details
@@ -215,14 +195,10 @@ class Transaction(Base):
     receipt_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    subscription: Mapped[Subscription] = relationship(
-        "Subscription", back_populates="transactions"
-    )
+    subscription: Mapped[Subscription] = relationship("Subscription", back_populates="transactions")
 
 
 class WebhookEvent(Base):
@@ -236,10 +212,6 @@ class WebhookEvent(Base):
         default=uuid.uuid4,
         nullable=False,
     )
-    stripe_event_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
+    stripe_event_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-    processed_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

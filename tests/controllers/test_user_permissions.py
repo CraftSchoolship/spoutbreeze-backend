@@ -1,8 +1,9 @@
 import uuid
+
 import pytest
 
-from app.main import app
 from app.controllers import user_controller
+from app.main import app
 
 
 class DummyUser:
@@ -29,9 +30,7 @@ class DummyUser:
 @pytest.mark.anyio
 async def test_users_forbidden_for_non_admin(client, monkeypatch):
     # Non-admin current user
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser(
-        "viewer", roles=["viewer"]
-    )
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("viewer", roles=["viewer"])
     try:
         # Ensure service is not even called when forbidden
         async def should_not_be_called(*a, **k):
@@ -52,9 +51,7 @@ async def test_users_forbidden_for_non_admin(client, monkeypatch):
 
 @pytest.mark.anyio
 async def test_users_allowed_for_admin(client, monkeypatch):
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser(
-        "admin", roles=["admin"]
-    )
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["admin"])
     try:
         # Return minimal, schema-like user dict
         async def fake_get_users(skip, limit, db):
@@ -71,9 +68,7 @@ async def test_users_allowed_for_admin(client, monkeypatch):
                 }
             ]
 
-        monkeypatch.setattr(
-            user_controller.user_service_cached, "get_users_list_cached", fake_get_users
-        )
+        monkeypatch.setattr(user_controller.user_service_cached, "get_users_list_cached", fake_get_users)
 
         resp = await client.get("/api/users")
         assert resp.status_code == 200
@@ -86,9 +81,7 @@ async def test_users_allowed_for_admin(client, monkeypatch):
 
 @pytest.mark.anyio
 async def test_cache_stats_forbidden_for_non_admin(client):
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser(
-        "viewer", roles=["viewer"]
-    )
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("viewer", roles=["viewer"])
     try:
         resp = await client.get("/api/cache/stats")
         assert resp.status_code == 403
@@ -98,9 +91,7 @@ async def test_cache_stats_forbidden_for_non_admin(client):
 
 @pytest.mark.anyio
 async def test_cache_stats_allowed_for_admin(client, monkeypatch):
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser(
-        "admin", roles=["admin"]
-    )
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["admin"])
     try:
 
         async def ok_health():
@@ -115,8 +106,6 @@ async def test_cache_stats_allowed_for_admin(client, monkeypatch):
         assert data["cache_status"] in ("healthy", "unhealthy")
         # If we mocked healthy:
         assert data["cache_status"] == "healthy"
-        assert (
-            isinstance(data["cache_patterns"], list) and len(data["cache_patterns"]) > 0
-        )
+        assert isinstance(data["cache_patterns"], list) and len(data["cache_patterns"]) > 0
     finally:
         app.dependency_overrides.pop(user_controller.get_current_user, None)

@@ -49,9 +49,7 @@ def set_auth_cookies(response: Response, token_data: dict[str, Any]) -> None:
         token_data: Dictionary containing access_token, refresh_token, expires_in
     """
     # Calculate expiration times
-    access_token_expires = datetime.now(UTC) + timedelta(
-        seconds=token_data.get("expires_in", 300)
-    )
+    access_token_expires = datetime.now(UTC) + timedelta(seconds=token_data.get("expires_in", 300))
     refresh_token_expires = datetime.now(UTC) + timedelta(days=30)
 
     # Determine cookie settings based on environment
@@ -140,9 +138,7 @@ def extract_keycloak_roles(user_info: dict, client_id: str) -> list | None:
     return roles
 
 
-async def process_user_info(
-    user_info: dict, user_roles: list | None, db: AsyncSession
-) -> User:
+async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncSession) -> User:
     """
     Process user information and create/update user in database
 
@@ -182,16 +178,10 @@ async def process_user_info(
         return new_user
     else:
         # Update the existing user information
-        existing_user.username = str(
-            user_info.get("preferred_username", existing_user.username)
-        )
+        existing_user.username = str(user_info.get("preferred_username", existing_user.username))
         existing_user.email = str(user_info.get("email", existing_user.email))
-        existing_user.first_name = str(
-            user_info.get("given_name", existing_user.first_name)
-        )
-        existing_user.last_name = str(
-            user_info.get("family_name", existing_user.last_name)
-        )
+        existing_user.first_name = str(user_info.get("given_name", existing_user.first_name))
+        existing_user.last_name = str(user_info.get("family_name", existing_user.last_name))
         existing_user.updated_at = datetime.now()
 
         # Only update roles if we got some from Keycloak
@@ -218,14 +208,10 @@ async def protected_route(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/token")
-async def exchange_token(
-    request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)
-):
+async def exchange_token(request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Exchange authorization code for tokens and set secure cookies"""
     try:
-        token_data = auth_service.exchange_token(
-            request.code, request.redirect_uri, request.code_verifier
-        )
+        token_data = auth_service.exchange_token(request.code, request.redirect_uri, request.code_verifier)
 
         # Extract the access token
         access_token = token_data.get("access_token")

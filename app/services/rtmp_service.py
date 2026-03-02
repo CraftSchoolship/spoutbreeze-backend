@@ -1,18 +1,18 @@
+from uuid import UUID
+
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.logger_config import logger
 from app.models.stream_models import RtmpEndpoint
-from app.models.user_models import User
 from app.models.stream_schemas import (
-    RtmpEndpointResponse,
-    RtmpEndpointUpdate,
     CreateRtmpEndpointCreate,
     RtmpEndpointDeleteResponse,
+    RtmpEndpointResponse,
+    RtmpEndpointUpdate,
 )
-from uuid import UUID
-from typing import List, Optional
-
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
-from sqlalchemy.exc import IntegrityError
-from app.config.logger_config import logger
+from app.models.user_models import User
 
 
 class RtmpEndpointService:
@@ -20,9 +20,7 @@ class RtmpEndpointService:
     Service for creating the stream settings
     """
 
-    def _create_rtmp_endpoints_response(
-        self, rtmp_endpoints: RtmpEndpoint, user: User
-    ) -> RtmpEndpointResponse:
+    def _create_rtmp_endpoints_response(self, rtmp_endpoints: RtmpEndpoint, user: User) -> RtmpEndpointResponse:
         """
         Create a RtmpEndpointResponse with user information.
         """
@@ -62,29 +60,21 @@ class RtmpEndpointService:
             user_result = await db.execute(select(User).where(User.id == user_id))
             user = user_result.scalar_one()
 
-            logger.info(
-                f"Stream settings with the name {new_rtmp_endpoints.title} created for user {user_id}"
-            )
+            logger.info(f"Stream settings with the name {new_rtmp_endpoints.title} created for user {user_id}")
             return self._create_rtmp_endpoints_response(new_rtmp_endpoints, user)
         except IntegrityError as e:
             await db.rollback()
             error_msg = str(e.orig)
 
             if "stream_endpoints_stream_key_key" in error_msg:
-                logger.warning(
-                    f"Duplicate stream key attempted: {rtmp_endpoints.stream_key}"
-                )
-                raise ValueError(
-                    "Stream key already exists. Please use a different stream key."
-                )
+                logger.warning(f"Duplicate stream key attempted: {rtmp_endpoints.stream_key}")
+                raise ValueError("Stream key already exists. Please use a different stream key.")
             elif "stream_endpoints_title_key" in error_msg or "title" in error_msg:
                 logger.warning(f"Duplicate title attempted: {rtmp_endpoints.title}")
                 raise ValueError("Title already exists. Please use a different title.")
             else:
                 logger.error(f"Integrity constraint violation: {error_msg}")
-                raise ValueError(
-                    "A unique constraint was violated. Please check your input data."
-                )
+                raise ValueError("A unique constraint was violated. Please check your input data.")
         except Exception as e:
             logger.error(f"Error creating stream settings: {e}")
             await db.rollback()
@@ -93,14 +83,12 @@ class RtmpEndpointService:
     async def get_all_rtmp_endpoints(
         self,
         db: AsyncSession,
-    ) -> List[RtmpEndpointResponse]:
+    ) -> list[RtmpEndpointResponse]:
         """
         Get all stream settings
         """
         try:
-            result = await db.execute(
-                select(RtmpEndpoint, User).join(User, RtmpEndpoint.user_id == User.id)
-            )
+            result = await db.execute(select(RtmpEndpoint, User).join(User, RtmpEndpoint.user_id == User.id))
             rtmp_endpoints_user_pairs = result.all()
 
             rtmp_endpoints_list = [
@@ -118,15 +106,13 @@ class RtmpEndpointService:
         self,
         user_id: UUID,
         db: AsyncSession,
-    ) -> List[RtmpEndpointResponse]:
+    ) -> list[RtmpEndpointResponse]:
         """
         Get all stream settings for a user
         """
         try:
             result = await db.execute(
-                select(RtmpEndpoint, User)
-                .join(User, RtmpEndpoint.user_id == User.id)
-                .where(RtmpEndpoint.user_id == user_id)
+                select(RtmpEndpoint, User).join(User, RtmpEndpoint.user_id == User.id).where(RtmpEndpoint.user_id == user_id)
             )
             rtmp_endpoints_user_pairs = result.all()
 
@@ -135,9 +121,7 @@ class RtmpEndpointService:
                 for rtmp_endpoints, user in rtmp_endpoints_user_pairs
             ]
 
-            logger.info(
-                f"Retrieved {len(rtmp_endpoints_list)} stream settings for user {user_id}"
-            )
+            logger.info(f"Retrieved {len(rtmp_endpoints_list)} stream settings for user {user_id}")
             return rtmp_endpoints_list
         except Exception as e:
             logger.error(f"Error retrieving stream settings for user {user_id}: {e}")
@@ -147,7 +131,7 @@ class RtmpEndpointService:
         self,
         rtmp_endpoints_id: UUID,
         db: AsyncSession,
-    ) -> Optional[RtmpEndpointResponse]:
+    ) -> RtmpEndpointResponse | None:
         """
         Get stream settings by ID
         """
@@ -167,9 +151,7 @@ class RtmpEndpointService:
                 logger.warning(f"Stream settings with ID {rtmp_endpoints_id} not found")
                 return None
         except Exception as e:
-            logger.error(
-                f"Error retrieving stream settings with ID {rtmp_endpoints_id}: {e}"
-            )
+            logger.error(f"Error retrieving stream settings with ID {rtmp_endpoints_id}: {e}")
             raise
 
     async def update_rtmp_endpoints(
@@ -177,7 +159,7 @@ class RtmpEndpointService:
         rtmp_endpoints_id: UUID,
         rtmp_endpoints_update: RtmpEndpointUpdate,
         db: AsyncSession,
-    ) -> Optional[RtmpEndpointResponse]:
+    ) -> RtmpEndpointResponse | None:
         """
         Update stream settings by ID
         """
@@ -197,30 +179,18 @@ class RtmpEndpointService:
             rtmp_endpoints, user = rtmp_endpoints_user_pair
 
             # Update the stream settings
-            update_data = {
-                k: v
-                for k, v in rtmp_endpoints_update.model_dump().items()
-                if v is not None
-            }
+            update_data = {k: v for k, v in rtmp_endpoints_update.model_dump().items() if v is not None}
 
             if update_data:
-                update_stmt = (
-                    update(RtmpEndpoint)
-                    .where(RtmpEndpoint.id == rtmp_endpoints_id)
-                    .values(**update_data)
-                )
+                update_stmt = update(RtmpEndpoint).where(RtmpEndpoint.id == rtmp_endpoints_id).values(**update_data)
                 await db.execute(update_stmt)
                 await db.commit()
                 await db.refresh(rtmp_endpoints)
 
-            logger.info(
-                f"Stream settings with ID {rtmp_endpoints_id} updated for user {rtmp_endpoints.user_id}"
-            )
+            logger.info(f"Stream settings with ID {rtmp_endpoints_id} updated for user {rtmp_endpoints.user_id}")
             return self._create_rtmp_endpoints_response(rtmp_endpoints, user)
         except Exception as e:
-            logger.error(
-                f"Error updating stream settings with ID {rtmp_endpoints_id}: {e}"
-            )
+            logger.error(f"Error updating stream settings with ID {rtmp_endpoints_id}: {e}")
             await db.rollback()
             raise
 
@@ -229,7 +199,7 @@ class RtmpEndpointService:
         rtmp_endpoints_id: UUID,
         user_id: UUID,
         db: AsyncSession,
-    ) -> Optional[RtmpEndpointDeleteResponse]:
+    ) -> RtmpEndpointDeleteResponse | None:
         """
         Delete stream settings by ID
         """
@@ -246,21 +216,15 @@ class RtmpEndpointService:
                 return None
 
             # Delete the stream settings
-            delete_stmt = delete(RtmpEndpoint).where(
-                RtmpEndpoint.id == rtmp_endpoints_id
-            )
+            delete_stmt = delete(RtmpEndpoint).where(RtmpEndpoint.id == rtmp_endpoints_id)
             await db.execute(delete_stmt)
             await db.commit()
-            logger.info(
-                f"Stream settings with ID {rtmp_endpoints_id} deleted for user {user_id}"
-            )
+            logger.info(f"Stream settings with ID {rtmp_endpoints_id} deleted for user {user_id}")
             return RtmpEndpointDeleteResponse(
                 message="Stream settings deleted successfully",
                 id=rtmp_endpoints_id,
             )
         except Exception as e:
-            logger.error(
-                f"Error deleting stream settings with ID {rtmp_endpoints_id}: {e}"
-            )
+            logger.error(f"Error deleting stream settings with ID {rtmp_endpoints_id}: {e}")
             await db.rollback()
             raise

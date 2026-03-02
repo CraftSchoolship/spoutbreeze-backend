@@ -1,9 +1,11 @@
-import httpx
-import ssl
-from app.config.settings import get_settings
-from urllib.parse import urlencode
-import secrets
 import logging
+import secrets
+import ssl
+from urllib.parse import urlencode
+
+import httpx
+
+from app.config.settings import get_settings
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -111,9 +113,7 @@ class TwitchAuth:
                 logger.info("[TwitchAuth] Access token refreshed successfully")
                 return token_data
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"[TwitchAuth] Token refresh failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"[TwitchAuth] Token refresh failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"[TwitchAuth] Token refresh error: {e}")

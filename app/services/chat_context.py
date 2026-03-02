@@ -1,4 +1,3 @@
-from typing import Optional, List
 from app.config.redis_config import cache
 
 
@@ -21,7 +20,7 @@ async def set_user_mapping(meeting_id: str, user_id: str, ttl: int = 86400) -> N
     await cache.set(_key_meeting_to_user(meeting_id), user_id, ttl)
 
 
-async def get_user_mapping(meeting_id: str) -> Optional[str]:
+async def get_user_mapping(meeting_id: str) -> str | None:
     await cache.connect()
     return await cache.get(_key_meeting_to_user(meeting_id))
 
@@ -55,7 +54,7 @@ async def remove_user_stream(stream_id: str) -> None:
     await cache.delete(_key_stream_to_user(stream_id))
 
 
-async def get_user_streams(user_id: str) -> List[str]:
+async def get_user_streams(user_id: str) -> list[str]:
     """Get all active stream_ids for a user"""
     await cache.connect()
     streams = await cache.smembers(_key_user_streams_set(user_id))

@@ -9,6 +9,7 @@ Usage:
 """
 
 from cryptography.fernet import Fernet
+
 from app.config.settings import get_settings
 
 _settings = get_settings()

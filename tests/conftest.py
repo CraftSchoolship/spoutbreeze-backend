@@ -1,20 +1,22 @@
+import asyncio
+from datetime import datetime, timedelta
+from uuid import uuid4
+
 import pytest
 import pytest_asyncio
-import asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from uuid import uuid4
-from datetime import datetime, timedelta
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config.database.session import Base, get_db
 from app.main import app
-from app.config.database.session import get_db, Base
-from app.models.user_models import User
 from app.models.channel.channels_model import Channel
-from app.models.stream_models import RtmpEndpoint
-from app.models.event.event_models import Event
-from app.models.event.event_models import EventStatus  # Import EventStatus
+from app.models.event.event_models import (
+    Event,
+    EventStatus,  # Import EventStatus
+)
 from app.models.payment_models import Subscription, Transaction, WebhookEvent
-
+from app.models.stream_models import RtmpEndpoint
+from app.models.user_models import User
 
 # Test database URL (SQLite for simplicity in tests)
 TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
@@ -89,9 +91,7 @@ async def client(db_session):
     app.dependency_overrides[get_db] = override_get_db_sync
 
     # Use ASGITransport to properly connect AsyncClient with FastAPI app
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
     app.dependency_overrides.clear()

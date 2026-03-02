@@ -1,20 +1,19 @@
-import pytest
-from httpx import AsyncClient
 from uuid import uuid4
 
-from app.main import app
+import pytest
+from httpx import AsyncClient
+
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
+from app.main import app
 from app.models.channel.channels_model import Channel
+from app.models.user_models import User
 
 
 class TestChannelsController:
     """Test cases for channels controller"""
 
     @pytest.mark.asyncio
-    async def test_create_channel_success(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_channel_success(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test successful channel creation"""
         # Override the get_current_user dependency
         app.dependency_overrides[get_current_user] = mock_current_user
@@ -72,9 +71,7 @@ class TestChannelsController:
         assert data["channels"][0]["name"] == test_channel.name
 
     @pytest.mark.asyncio
-    async def test_get_channels_by_user_no_channels(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_channels_by_user_no_channels(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting channels when user has no channels"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -122,9 +119,7 @@ class TestChannelsController:
         assert data["creator_id"] == str(test_user.id)
 
     @pytest.mark.asyncio
-    async def test_get_channel_by_id_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_channel_by_id_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting non-existent channel"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -148,9 +143,7 @@ class TestChannelsController:
 
         update_data = {"name": "Updated Channel Name"}
 
-        response = await client.put(
-            f"/api/channels/{test_channel.id}", json=update_data
-        )
+        response = await client.put(f"/api/channels/{test_channel.id}", json=update_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -158,18 +151,14 @@ class TestChannelsController:
         assert data["id"] == str(test_channel.id)
 
     @pytest.mark.asyncio
-    async def test_update_channel_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_update_channel_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test updating non-existent channel"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
         non_existent_id = uuid4()
         update_data = {"name": "Updated Name"}
 
-        response = await client.put(
-            f"/api/channels/{non_existent_id}", json=update_data
-        )
+        response = await client.put(f"/api/channels/{non_existent_id}", json=update_data)
 
         assert response.status_code == 404
         data = response.json()
@@ -193,9 +182,7 @@ class TestChannelsController:
         assert data["message"] == "Channel deleted successfully"
 
     @pytest.mark.asyncio
-    async def test_delete_channel_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_delete_channel_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test deleting non-existent channel"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -221,9 +208,7 @@ class TestChannelsController:
         # Mock the channels_service.get_channel_recordings method
         mock_recordings = {"recordings": [], "total_recordings": 0}
 
-        mock_service = mocker.patch(
-            "app.controllers.channels_controller.channels_service.get_channel_recordings"
-        )
+        mock_service = mocker.patch("app.controllers.channels_controller.channels_service.get_channel_recordings")
         mock_service.return_value = mock_recordings
 
         response = await client.get(f"/api/channels/{test_channel.id}/recordings")
@@ -234,9 +219,7 @@ class TestChannelsController:
         assert data["total_recordings"] == 0
 
     @pytest.mark.asyncio
-    async def test_invalid_uuid_format(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_invalid_uuid_format(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test endpoints with invalid UUID format"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
