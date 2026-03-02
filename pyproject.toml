@@ -1,0 +1,50 @@
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = [
+    "venv/",
+    "alembic/",
+    "tests/",
+    "scripts/",
+]
+
+[tool.ruff]
+line-length = 127
+target-version = "py312"
+exclude = [
+    "venv",
+    "alembic",
+    ".git",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # Depends() in defaults — standard FastAPI pattern
+    "B904",   # raise without from — low priority
+    "B011",   # assert False in tests
+    "B017",   # pytest.raises(Exception) too broad
+    "SIM102", # nested if — readability preference
+    "F841",   # unused variable — fix incrementally
+    "N815",   # camelCase variables — required by BBB API field names
+    "N805",   # first argument naming — false positives on classmethods
+    "C416",   # unnecessary list comprehension
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

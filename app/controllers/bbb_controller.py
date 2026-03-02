@@ -1,29 +1,31 @@
-from fastapi import APIRouter, Body, Depends, Request, BackgroundTasks, HTTPException, Header
-from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+import os
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, Header, HTTPException, Request
+from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
+from app.config.facebook_auth import FacebookAuth
+from app.controllers.user_controller import get_current_user
+from app.models.bbb_models import BbbMeeting
+from app.models.bbb_schemas import (
+    CreateMeetingRequest,
+    EndMeetingRequest,
+    GetMeetingInfoRequest,
+    GetRecordingRequest,
+    IsMeetingRunningRequest,
+    JoinMeetingRequest,
+)
+from app.models.user_models import User
 
 # Replace with cached services:
 from app.services.cached.bbb_service_cached import BBBServiceCached
 from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
-from app.models.bbb_schemas import (
-    CreateMeetingRequest,
-    JoinMeetingRequest,
-    EndMeetingRequest,
-    GetMeetingInfoRequest,
-    IsMeetingRunningRequest,
-    GetRecordingRequest,
-)
-from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
-from app.models.bbb_models import BbbMeeting
-from uuid import UUID
 from app.services.chat_context import set_user_mapping
-from app.config.facebook_auth import FacebookAuth
 from app.services.connection_service import ConnectionService
-from pydantic import BaseModel
-import os
-import logging
 
 router = APIRouter(prefix="/api/bbb", tags=["BigBlueButton"])
 bbb_service = BBBServiceCached()
@@ -67,11 +69,13 @@ async def create_meeting(
         user_id=UUID(str(current_user.id)),
         db=db,
     )
-    await set_user_mapping(
-        meeting_id=result.get("internalMeetingID"),
-        user_id=str(current_user.id),
-        ttl=86400,
-    )
+    internal_meeting_id = result.get("internalMeetingID")
+    if internal_meeting_id:
+        await set_user_mapping(
+            meeting_id=internal_meeting_id,
+            user_id=str(current_user.id),
+            ttl=86400,
+        )
     return result
 
 

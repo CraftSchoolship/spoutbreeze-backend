@@ -1,15 +1,18 @@
 from __future__ import annotations
-import pickle
+
+import builtins
 import hashlib
-from typing import Optional, Callable, Any, TypeVar, ParamSpec, cast, Coroutine, Set
+import pickle
+from collections.abc import Callable, Coroutine
 from functools import wraps
+from typing import Any, ParamSpec, TypeVar, cast
 
 import redis.asyncio as redis
 from redis.asyncio import Redis
-
-from app.config.settings import get_settings
-from app.config.logger_config import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.logger_config import get_logger
+from app.config.settings import get_settings
 
 settings = get_settings()
 logger = get_logger("Redis")
@@ -17,7 +20,7 @@ logger = get_logger("Redis")
 
 class RedisCache:
     def __init__(self) -> None:
-        self.redis_client: Optional[Redis] = None
+        self.redis_client: Redis | None = None
 
     async def connect(self) -> None:
         if self.redis_client:
@@ -45,7 +48,7 @@ class RedisCache:
             except Exception as e:
                 logger.error(f"Redis close error: {e}")
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         if not self.redis_client:
             return None
         try:
@@ -105,7 +108,8 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.sadd(key, *values)
+            result = await self.redis_client.sadd(key, *values)  # type: ignore[misc]
+            return cast(int, result)
         except Exception as e:
             logger.error(f"SADD {key} error: {e}")
             return 0
@@ -115,17 +119,18 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.srem(key, *values)
+            result = await self.redis_client.srem(key, *values)  # type: ignore[misc]
+            return cast(int, result)
         except Exception as e:
             logger.error(f"SREM {key} error: {e}")
             return 0
 
-    async def smembers(self, key: str) -> Set[str]:
+    async def smembers(self, key: str) -> builtins.set[str]:
         """Get all members of a set"""
         if not self.redis_client:
             return set()
         try:
-            members = await self.redis_client.smembers(key)
+            members = await self.redis_client.smembers(key)  # type: ignore[misc]
             # Decode bytes to strings if needed
             return {m.decode() if isinstance(m, bytes) else m for m in members}
         except Exception as e:
@@ -137,7 +142,8 @@ class RedisCache:
         if not self.redis_client:
             return 0
         try:
-            return await self.redis_client.scard(key)
+            result = await self.redis_client.scard(key)  # type: ignore[misc]
+            return cast(int, result)
         except Exception as e:
             logger.error(f"SCARD {key} error: {e}")
             return 0
@@ -178,9 +184,9 @@ def cached(
             k: str = (
                 f"{key_prefix}:{func.__name__}:{generate_cache_key(*args, **kwargs)}"
             )
-            hit: Optional[R] = None
+            hit: R | None = None
             try:
-                hit = cast(Optional[R], await cache.get(k))
+                hit = cast(R | None, await cache.get(k))
             except Exception as e:
                 logger.error(f"Decorator GET error ({k}): {e}")
             if hit is not None:
@@ -213,9 +219,9 @@ def cached_db(
                 k: v for k, v in kwargs.items() if not isinstance(v, AsyncSession)
             }
             k: str = f"{key_prefix}:{func.__name__}:{generate_cache_key(*filt_args, **filt_kwargs)}"
-            hit: Optional[R] = None
+            hit: R | None = None
             try:
-                hit = cast(Optional[R], await cache.get(k))
+                hit = cast(R | None, await cache.get(k))
             except Exception as e:
                 logger.error(f"Decorator GET error ({k}): {e}")
             if hit is not None:

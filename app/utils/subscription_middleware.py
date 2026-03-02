@@ -3,16 +3,17 @@ Subscription Middleware and Guards
 Enforces subscription plan limits and restrictions
 """
 
-from fastapi import HTTPException, status, Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
-from app.services.payment_service import PaymentService
-from app.services.auth_service import AuthService
-from app.models.user_models import User
-from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
 from app.config.logger_config import get_logger
+from app.controllers.user_controller import get_current_user
+from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
+from app.models.user_models import User
+from app.services.payment_service import PaymentService
 
 logger = get_logger("SubscriptionMiddleware")
 
@@ -28,8 +29,7 @@ class SubscriptionGuard:
         Get current user with their subscription
         Creates a free subscription if user doesn't have one
         """
-        auth_service = AuthService(db)
-        user = await auth_service.get_current_user(request)
+        user = await get_current_user(request, db)
 
         if not user:
             raise HTTPException(
@@ -55,7 +55,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if user.unlimited_access:
             return
-        
+
         if not subscription.is_active():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -101,7 +101,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         limits = subscription.get_plan_limits()
         max_quality = limits.get("max_quality", "720p")
 
@@ -131,7 +131,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         limits = subscription.get_plan_limits()
         max_streams = limits.get("max_concurrent_streams")
 
@@ -149,7 +149,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         limits = subscription.get_plan_limits()
         max_duration = limits.get("max_stream_duration_hours")
 
@@ -165,7 +165,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         limits = subscription.get_plan_limits()
 
         feature_map = {
@@ -191,7 +191,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         if subscription.plan == SubscriptionPlan.FREE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -204,7 +204,7 @@ class SubscriptionGuard:
         # Skip check for users with unlimited access
         if subscription.user.unlimited_access:
             return
-        
+
         if subscription.plan != SubscriptionPlan.ENTERPRISE.value:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

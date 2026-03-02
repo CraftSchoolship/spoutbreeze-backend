@@ -8,13 +8,12 @@ against the unified `connections` table.
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
-from sqlalchemy import update, select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.connection_model import Connection
-from app.utils.token_encryption import encrypt_token, decrypt_token
+from app.utils.token_encryption import decrypt_token, encrypt_token
 
 logger = logging.getLogger(__name__)
 
@@ -22,42 +21,41 @@ logger = logging.getLogger(__name__)
 REFRESH_THRESHOLD_SECONDS = 300  # 5 minutes
 
 
+async def _refresh_twitch(refresh_token: str) -> dict:
+    from app.config.twitch_auth import TwitchAuth
+
+    auth = TwitchAuth()
+    return await auth.refresh_access_token(refresh_token)
+
+
+async def _refresh_youtube(refresh_token: str) -> dict:
+    from app.config.youtube_auth import YouTubeAuth
+
+    auth = YouTubeAuth()
+    return await auth.refresh_access_token(refresh_token)
+
+
+async def _refresh_facebook(refresh_token: str) -> dict:
+    from app.config.facebook_auth import FacebookAuth
+
+    auth = FacebookAuth()
+    token_data = await auth.refresh_access_token(refresh_token)
+    # Facebook returns a new long-lived token; store it as refresh_token too
+    if "refresh_token" not in token_data:
+        token_data["refresh_token"] = token_data["access_token"]
+    return token_data
+
+
+_REFRESHERS = {
+    "twitch": _refresh_twitch,
+    "youtube": _refresh_youtube,
+    "facebook": _refresh_facebook,
+    "facebook_page": _refresh_facebook,  # Pages use same refresh logic
+}
+
+
 class ConnectionService:
     """Service layer for unified platform connections."""
-
-    # --- Provider-specific refresh helpers ---
-
-    @staticmethod
-    async def _refresh_twitch(refresh_token: str) -> dict:
-        from app.config.twitch_auth import TwitchAuth
-
-        auth = TwitchAuth()
-        return await auth.refresh_access_token(refresh_token)
-
-    @staticmethod
-    async def _refresh_youtube(refresh_token: str) -> dict:
-        from app.config.youtube_auth import YouTubeAuth
-
-        auth = YouTubeAuth()
-        return await auth.refresh_access_token(refresh_token)
-
-    @staticmethod
-    async def _refresh_facebook(refresh_token: str) -> dict:
-        from app.config.facebook_auth import FacebookAuth
-
-        auth = FacebookAuth()
-        token_data = await auth.refresh_access_token(refresh_token)
-        # Facebook returns a new long-lived token; store it as refresh_token too
-        if "refresh_token" not in token_data:
-            token_data["refresh_token"] = token_data["access_token"]
-        return token_data
-
-    _REFRESHERS = {
-        "twitch": _refresh_twitch.__func__,
-        "youtube": _refresh_youtube.__func__,
-        "facebook": _refresh_facebook.__func__,
-        "facebook_page": _refresh_facebook.__func__,  # Pages use same refresh logic
-    }
 
     # --- Public API ---
 
@@ -69,7 +67,7 @@ class ConnectionService:
         provider: str,
         token_data: dict,
         scopes: list[str],
-        provider_user_id: Optional[str] = None,
+        provider_user_id: str | None = None,
     ) -> Connection:
         """Create or update a platform connection (upsert)."""
 
@@ -139,7 +137,7 @@ class ConnectionService:
         db: AsyncSession,
         user_id,
         provider: str,
-    ) -> Optional[Connection]:
+    ) -> Connection | None:
         """Return the active (non-revoked) connection for a user + provider."""
         stmt = (
             select(Connection)
@@ -173,7 +171,7 @@ class ConnectionService:
             )
             return False
 
-        refresher = cls._REFRESHERS.get(provider)
+        refresher = _REFRESHERS.get(provider)
         if not refresher:
             logger.warning(f"[{provider}] No refresher registered for provider")
             return False
@@ -206,7 +204,7 @@ class ConnectionService:
         db: AsyncSession,
         user_id,
         provider: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Return a valid (decrypted) access token, auto-refreshing if needed.
 
         Returns dict with access_token, refresh_token, expires_at or None.
@@ -319,8 +317,8 @@ class ConnectionService:
         db: AsyncSession,
         user_id,
         provider: str,
-        provider_user_id: Optional[str] = None,
-    ) -> Optional[dict]:
+        provider_user_id: str | None = None,
+    ) -> dict | None:
         """Return decrypted token for a specific connection.
 
         For providers with provider_user_id (e.g. facebook_page),

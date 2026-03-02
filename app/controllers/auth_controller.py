@@ -1,27 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import (
-    OAuth2AuthorizationCodeBearer,
     HTTPBearer,
+    OAuth2AuthorizationCodeBearer,
 )
-from app.services.auth_service import AuthService
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.database.session import get_db
+from app.config.logger_config import logger
+from app.config.settings import get_settings, keycloak_openid
+from app.controllers.user_controller import get_current_user
 from app.models.auth_models import (
     TokenRequest,
     TokenResponse,
 )
-from app.config.settings import keycloak_openid, get_settings
-from app.config.database.session import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select
 from app.models.user_models import User
-from app.controllers.user_controller import get_current_user
-from typing import cast, Dict, Any, Optional
-from datetime import timedelta
-
-from app.config.logger_config import logger
-from pydantic import BaseModel
-
+from app.services.auth_service import AuthService
 
 bearer_scheme = HTTPBearer()
 settings = get_settings()
@@ -41,7 +40,7 @@ class ProtectedRouteResponse(BaseModel):
     message: str
 
 
-def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
+def set_auth_cookies(response: Response, token_data: dict[str, Any]) -> None:
     """
     Set authentication cookies with proper configuration
 
@@ -50,15 +49,15 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         token_data: Dictionary containing access_token, refresh_token, expires_in
     """
     # Calculate expiration times
-    access_token_expires = datetime.now(timezone.utc) + timedelta(
+    access_token_expires = datetime.now(UTC) + timedelta(
         seconds=token_data.get("expires_in", 300)
     )
-    refresh_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
+    refresh_token_expires = datetime.now(UTC) + timedelta(days=30)
 
     # Determine cookie settings based on environment
     is_production = settings.env == "production"
     cookie_domain = settings.domain if is_production else None
-    samesite_setting = (
+    samesite_setting: Literal["lax", "strict", "none"] = (
         "none" if is_production else "lax"
     )  # "none" required for cross-domain in production
 
@@ -123,7 +122,7 @@ def clear_auth_cookies(response: Response) -> None:
             )
 
 
-def extract_keycloak_roles(user_info: dict, client_id: str) -> Optional[list]:
+def extract_keycloak_roles(user_info: dict, client_id: str) -> list | None:
     """Extract client roles from Keycloak user info"""
     logger.info(f"Extracting roles for client_id: {client_id}")
 
@@ -142,7 +141,7 @@ def extract_keycloak_roles(user_info: dict, client_id: str) -> Optional[list]:
 
 
 async def process_user_info(
-    user_info: dict, user_roles: Optional[list], db: AsyncSession
+    user_info: dict, user_roles: list | None, db: AsyncSession
 ) -> User:
     """
     Process user information and create/update user in database
