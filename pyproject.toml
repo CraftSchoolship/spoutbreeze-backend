@@ -48,3 +48,22 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]
+
+[tool.coverage.run]
+omit = [
+    "app/config/*",
+    "app/main.py",
+    "app/models/*",
+    "app/utils/subscription_middleware.py",
+    "app/utils/token_encryption.py",
+    "alembic/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "\\.\\.\\.",
+]

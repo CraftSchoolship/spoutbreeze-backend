@@ -76,6 +76,9 @@ class TestPriceIdValidation:
     @patch("app.services.payment_service.settings")
     @patch("app.services.payment_service.stripe")
     async def test_invalid_price_id_raises_400(self, mock_stripe, mock_settings, db_session, test_user):
+        import stripe as real_stripe
+
+        mock_stripe.StripeError = real_stripe.StripeError
         mock_settings.stripe_free_price_id = "price_free_123"
         mock_settings.stripe_pro_price_id = "price_pro_123"
         mock_settings.stripe_enterprise_price_id = "price_ent_123"
@@ -96,6 +99,9 @@ class TestPriceIdValidation:
     @patch("app.services.payment_service.settings")
     @patch("app.services.payment_service.stripe")
     async def test_empty_price_id_not_valid(self, mock_stripe, mock_settings, db_session, test_user):
+        import stripe as real_stripe
+
+        mock_stripe.StripeError = real_stripe.StripeError
         mock_settings.stripe_free_price_id = ""
         mock_settings.stripe_pro_price_id = "price_pro_123"
         mock_settings.stripe_enterprise_price_id = ""

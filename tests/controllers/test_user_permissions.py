@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 import pytest
 
@@ -15,6 +16,12 @@ class DummyUser:
         self.first_name = username.title()
         self.last_name = "User"
         self._roles = set(roles or [])
+        self.roles = ",".join(roles or [])
+        self.created_at = datetime.now()
+        self.updated_at = datetime.now()
+        self.is_active = True
+        self.has_used_free_trial = False
+        self.unlimited_access = False
 
     # Methods used by role dependencies
     def has_role(self, role: str) -> bool:

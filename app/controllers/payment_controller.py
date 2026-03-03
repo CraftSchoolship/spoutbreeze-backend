@@ -304,13 +304,12 @@ async def get_usage_stats(
 
 @router.get("/limits", response_model=PlanLimits)
 async def get_current_limits(
-    request: Request,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Get current user's subscription plan limits
     """
-    user = await get_current_user(request, db)
 
     # Eagerly load user relationship to avoid lazy loading issues
     result = await db.execute(

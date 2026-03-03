@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.config.database.session import Base, get_db
 from app.main import app
+from app.models.bbb_models import BbbMeeting
 from app.models.channel.channels_model import Channel
 from app.models.event.event_models import (
     Event,
@@ -76,6 +77,7 @@ async def db_session(setup_database):
             await session.execute(Subscription.__table__.delete())
             await session.execute(Event.__table__.delete())
             await session.execute(RtmpEndpoint.__table__.delete())
+            await session.execute(BbbMeeting.__table__.delete())
             await session.execute(Channel.__table__.delete())
             await session.execute(User.__table__.delete())
             await session.commit()

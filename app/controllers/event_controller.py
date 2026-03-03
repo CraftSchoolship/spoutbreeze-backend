@@ -107,6 +107,8 @@ async def start_event(
             return start_result
         else:
             raise HTTPException(status_code=400, detail="Failed to start event")
+    except HTTPException:
+        raise
     except ValueError as e:
         # Handle the case where the event ID is not found
         raise HTTPException(status_code=404, detail=str(e))
