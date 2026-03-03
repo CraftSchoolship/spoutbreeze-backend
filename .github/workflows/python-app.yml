@@ -63,4 +63,6 @@ jobs:
           pip install pytest pytest-asyncio pytest-cov pytest-mock
 
       - name: Run tests
-        run: pytest
+        run: |
+          cp .env.test .env
+          pytest
