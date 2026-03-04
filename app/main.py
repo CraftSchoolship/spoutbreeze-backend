@@ -53,8 +53,8 @@ async def lifespan(app: FastAPI):
         from app.controllers.auth_controller import _get_well_known, oauth2_scheme
 
         wk = _get_well_known()
-        oauth2_scheme.model.flows.authorizationCode.authorizationUrl = wk["authorization_endpoint"]  # type: ignore[union-attr]
-        oauth2_scheme.model.flows.authorizationCode.tokenUrl = wk["token_endpoint"]  # type: ignore[union-attr]
+        oauth2_scheme.model.flows.authorizationCode.authorizationUrl = wk["authorization_endpoint"]  # type: ignore[union-attr, attr-defined]
+        oauth2_scheme.model.flows.authorizationCode.tokenUrl = wk["token_endpoint"]  # type: ignore[union-attr, attr-defined]
         logger.info("[Auth] Keycloak well-known URLs loaded for OpenAPI docs")
     except Exception as e:
         logger.warning(f"[Auth] Could not load Keycloak well-known URLs: {e}")
