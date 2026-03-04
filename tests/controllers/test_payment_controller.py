@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -46,8 +47,22 @@ async def test_get_plans_has_required_fields(client: AsyncClient):
 
 
 @pytest.mark.anyio
-async def test_get_subscription_creates_free_for_new_user(client: AsyncClient, db_session, test_user: User, mock_current_user):
+@patch("app.services.payment_service.stripe")
+async def test_get_subscription_creates_free_for_new_user(
+    mock_stripe, client: AsyncClient, db_session, test_user: User, mock_current_user
+):
     """Should auto-create a free subscription for users without one"""
+    # Mock Stripe Customer.create to avoid real API calls
+    mock_customer = MagicMock()
+    mock_customer.id = "cus_test_fake_123"
+    mock_stripe.Customer.create.return_value = mock_customer
+    # Mock Stripe Subscription.list for reconcile step
+    mock_stripe.Subscription.list.return_value = MagicMock(data=[])
+    # Keep StripeError available for exception handling
+    import stripe as real_stripe
+
+    mock_stripe.StripeError = real_stripe.StripeError
+
     app.dependency_overrides[get_current_user] = mock_current_user
     try:
         resp = await client.get("/api/payments/subscription")
