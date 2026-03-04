@@ -10,7 +10,6 @@ from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 
 from app.config.database.session import SessionLocal
-
 from app.config.logger_config import get_logger
 from app.config.redis_config import cache
 from app.config.settings import get_settings
