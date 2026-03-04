@@ -27,10 +27,20 @@ settings = get_settings()
 
 router = APIRouter(prefix="/api", tags=["Authentication"])
 
-# OAuth2 scheme for token extraction
+
+def _get_well_known() -> dict:
+    """Lazy-load Keycloak well-known config to avoid import-time network calls."""
+    if not hasattr(_get_well_known, "_cache"):
+        _get_well_known._cache = keycloak_openid.well_known()  # type: ignore[attr-defined]
+    return _get_well_known._cache  # type: ignore[attr-defined]
+
+
+# OAuth2 scheme for token extraction — uses placeholder URLs that are
+# only relevant for the OpenAPI docs page; actual token validation
+# happens in AuthService.validate_token.
 oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=f"{keycloak_openid.well_known()['authorization_endpoint']}",
-    tokenUrl=f"{keycloak_openid.well_known()['token_endpoint']}",
+    authorizationUrl="deferred://keycloak/auth",
+    tokenUrl="deferred://keycloak/token",
 )
 
 auth_service = AuthService()

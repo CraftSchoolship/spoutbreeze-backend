@@ -19,18 +19,23 @@ class AuthService:
         self.settings = get_settings()
         self.keycloak_client_id = self.settings.keycloak_client_id
 
-        raw_key = keycloak_openid.public_key()
-
-        if not raw_key.startswith("-----BEGIN"):
-            # Format the public key proparly for PEM format
-            self.public_key = f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
-        else:
-            self.public_key = raw_key
+        self._public_key: str | None = None
 
         self._admin_token_cache: dict | None = None
 
         # SSL verification for requests
         self.ssl_verify = self._get_ssl_verify()
+
+    @property
+    def public_key(self) -> str:
+        """Lazy-load the Keycloak public key on first use."""
+        if self._public_key is None:
+            raw_key = keycloak_openid.public_key()
+            if not raw_key.startswith("-----BEGIN"):
+                self._public_key = f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
+            else:
+                self._public_key = raw_key
+        return self._public_key
 
     def _get_ssl_verify(self) -> str | bool:
         """

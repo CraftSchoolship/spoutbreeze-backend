@@ -11,7 +11,6 @@ from fastapi.openapi.utils import get_openapi
 
 from app.config.database.session import SessionLocal
 
-# from app.config.twitch_irc import TwitchIRCClient
 from app.config.logger_config import get_logger
 from app.config.redis_config import cache
 from app.config.settings import get_settings
@@ -50,6 +49,17 @@ async def lifespan(app: FastAPI):
     """
     logger.info("=== APPLICATION STARTUP ===")
 
+    # Patch OAuth2 scheme with real Keycloak URLs (now that Keycloak should be reachable)
+    try:
+        from app.controllers.auth_controller import _get_well_known, oauth2_scheme
+
+        wk = _get_well_known()
+        oauth2_scheme.model.flows.authorizationCode.authorizationUrl = wk["authorization_endpoint"]  # type: ignore[union-attr]
+        oauth2_scheme.model.flows.authorizationCode.tokenUrl = wk["token_endpoint"]  # type: ignore[union-attr]
+        logger.info("[Auth] Keycloak well-known URLs loaded for OpenAPI docs")
+    except Exception as e:
+        logger.warning(f"[Auth] Could not load Keycloak well-known URLs: {e}")
+
     # Startup: Configure OpenAPI schema
     openapi_schema = get_openapi(
         title="SpoutBreeze API",
@@ -79,13 +89,6 @@ async def lifespan(app: FastAPI):
     # Initialize Redis cache
     await cache.connect()
     logger.info("[cache] Redis cache connected")
-
-    # Startup: schedule the IRC client
-    # twitch_tasks = asyncio.gather(
-    #     twitch_client.connect(),
-    #     # twitch_client.start_token_refresh_scheduler(),
-    #     return_exceptions=True,
-    # )
 
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
@@ -245,24 +248,3 @@ app.include_router(stream_router)
 app.include_router(broadcaster_router)
 app.include_router(bbb_router)
 app.include_router(payment_router)
-
-
-# @app.websocket("/ws/chat/")
-# async def chat_endpoint(websocket: WebSocket):
-#     """
-#     WebSocket endpoint for chat messages
-#     """
-#     logger.info("WebSocket connection requested")
-#     await chat_manager.connect(websocket)
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             if data.startswith("/twitch"):
-#                 message = data[len("/twitch ") :]
-#                 await twitch_client.send_message(message)
-#                 logger.info(f"[TwitchIRC] Sending message: {message}")
-#             else:
-#                 await chat_manager.broadcast(data)
-#     except WebSocketDisconnect:
-#         chat_manager.disconnect(websocket)
-#         logger.info("[Chat] Client disconnected")
