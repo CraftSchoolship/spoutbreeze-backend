@@ -15,6 +15,8 @@ from app.models.base import user_event_association  # noqa: F401
 from app.models.connection_model import Connection  # noqa: F401
 from app.models.payment_models import Subscription  # noqa: F401
 from app.models.payment_models import Transaction  # noqa: F401
+from app.models.notification_models import Notification  # noqa: F401
+from app.models.notification_models import NotificationPreference  # noqa: F401
 
 from app.config.database.session import DATABASE_URL
 
