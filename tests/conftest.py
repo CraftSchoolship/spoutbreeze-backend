@@ -15,6 +15,7 @@ from app.models.event.event_models import (
     Event,
     EventStatus,  # Import EventStatus
 )
+from app.models.notification_models import Notification, NotificationPreference
 from app.models.payment_models import Subscription, Transaction, WebhookEvent
 from app.models.stream_models import RtmpEndpoint
 from app.models.user_models import User
@@ -75,6 +76,8 @@ async def db_session(setup_database):
             await session.execute(WebhookEvent.__table__.delete())
             await session.execute(Transaction.__table__.delete())
             await session.execute(Subscription.__table__.delete())
+            await session.execute(NotificationPreference.__table__.delete())
+            await session.execute(Notification.__table__.delete())
             await session.execute(Event.__table__.delete())
             await session.execute(RtmpEndpoint.__table__.delete())
             await session.execute(BbbMeeting.__table__.delete())
