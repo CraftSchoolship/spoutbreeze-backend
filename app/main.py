@@ -19,6 +19,7 @@ from app.controllers.broadcaster_controller import router as broadcaster_router
 from app.controllers.channels_controller import router as channels_router
 from app.controllers.event_controller import router as event_router
 from app.controllers.facebook_controller import router as facebook_router
+from app.controllers.facebook_stream_controller import router as facebook_stream_router
 from app.controllers.health_controller import router as health_router
 from app.controllers.internal_controller import router as internal_router
 from app.controllers.payment_controller import router as payment_router
@@ -246,4 +247,5 @@ app.include_router(event_router)
 app.include_router(stream_router)
 app.include_router(broadcaster_router)
 app.include_router(bbb_router)
+app.include_router(facebook_stream_router)
 app.include_router(payment_router)
