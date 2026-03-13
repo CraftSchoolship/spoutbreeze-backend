@@ -1,9 +1,10 @@
 import types
+
 import pytest
 from fastapi import HTTPException
 
-from app.main import app
 from app.controllers.user_controller import get_current_user
+from app.main import app
 
 
 @pytest.mark.anyio

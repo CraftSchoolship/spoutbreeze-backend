@@ -4,33 +4,32 @@ Handles all payment-related API endpoints including subscription management,
 checkout, webhooks, and plan information.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Header
+import stripe
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-from typing import List, Optional
-import stripe
-from sqlalchemy import select
 
 from app.config.database.session import get_db
-from app.config.settings import get_settings
 from app.config.logger_config import get_logger
-from app.services.payment_service import PaymentService
-from app.services.auth_service import AuthService
-from app.models.user_models import User
+from app.config.settings import get_settings
 from app.models.payment_models import Subscription
 from app.models.payment_schemas import (
-    CreateCheckoutSessionRequest,
+    CancelSubscriptionRequest,
     CheckoutSessionResponse,
+    CreateCheckoutSessionRequest,
     CustomerPortalRequest,
     CustomerPortalResponse,
+    PlanInfo,
+    PlanLimits,
     SubscriptionResponse,
     SubscriptionWithLimits,
     TransactionResponse,
-    PlanInfo,
-    CancelSubscriptionRequest,
-    PlanLimits,
 )
+from app.models.user_models import User
+from app.services.auth_service import AuthService
 from app.services.cached.user_service_cached import user_service_cached
+from app.services.payment_service import PaymentService
 
 logger = get_logger("PaymentController")
 settings = get_settings()
@@ -38,9 +37,7 @@ auth_service = AuthService()
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
 
-async def get_current_user(
-    request: Request, db: AsyncSession = Depends(get_db)
-) -> User:
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     """Dependency to get current authenticated user.
 
     Accepts token from Authorization header (Bearer) or access_token cookie.
@@ -54,7 +51,7 @@ async def get_current_user(
     try:
         # Prefer Authorization header for cross-origin/API calls
         auth_header = request.headers.get("Authorization")
-        token: Optional[str] = None
+        token: str | None = None
 
         if auth_header and auth_header.lower().startswith("bearer "):
             token = auth_header.split(" ", 1)[1].strip()
@@ -161,10 +158,7 @@ async def get_subscription(
 
     # Best-effort reconcile with Stripe in case webhooks didn't update yet
     try:
-        subscription = (
-            await PaymentService.reconcile_subscription_from_stripe(user, db)
-            or subscription
-        )
+        subscription = await PaymentService.reconcile_subscription_from_stripe(user, db) or subscription
     except Exception as e:
         logger.warning(f"Subscription reconcile skipped: {str(e)}")
 
@@ -174,7 +168,7 @@ async def get_subscription(
     # Add plan limits to response (computed from current plan)
     limits = subscription.get_plan_limits()
 
-    return SubscriptionWithLimits(**subscription.__dict__, limits=limits)
+    return SubscriptionWithLimits(**subscription.__dict__, limits=PlanLimits(**limits))
 
 
 @router.post("/subscription/cancel", response_model=SubscriptionResponse)
@@ -203,7 +197,7 @@ async def cancel_subscription(
         )
 
 
-@router.get("/plans", response_model=List[PlanInfo])
+@router.get("/plans", response_model=list[PlanInfo])
 async def get_plans():
     """
     Get available subscription plans with pricing and features
@@ -232,13 +226,11 @@ async def stripe_webhook(
 
     try:
         # Verify webhook signature
-        event = stripe.Webhook.construct_event(
-            payload, stripe_signature, settings.stripe_webhook_secret
-        )
+        event = stripe.Webhook.construct_event(payload, stripe_signature, settings.stripe_webhook_secret)
     except ValueError as e:
         logger.error(f"Invalid webhook payload: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
+    except stripe.SignatureVerificationError as e:
         logger.error(f"Invalid webhook signature: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
@@ -260,7 +252,7 @@ async def stripe_webhook(
         )
 
 
-@router.get("/transactions", response_model=List[TransactionResponse])
+@router.get("/transactions", response_model=list[TransactionResponse])
 async def get_transactions(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -312,19 +304,16 @@ async def get_usage_stats(
 
 @router.get("/limits", response_model=PlanLimits)
 async def get_current_limits(
-    request: Request,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Get current user's subscription plan limits
     """
-    user = await get_current_user(request, db)
-    
+
     # Eagerly load user relationship to avoid lazy loading issues
     result = await db.execute(
-        select(Subscription)
-        .options(joinedload(Subscription.user))
-        .where(Subscription.user_id == user.id)
+        select(Subscription).options(joinedload(Subscription.user)).where(Subscription.user_id == user.id)
     )
     subscription = result.unique().scalar_one_or_none()
 

@@ -1,19 +1,21 @@
 from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from typing import List, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
-from sqlalchemy import String, DateTime, Boolean
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.config.database.session import Base
 from app.models.bbb_models import BbbMeeting
 from app.models.channel.channels_model import Channel
-from app.models.stream_models import RtmpEndpoint
 from app.models.event.event_models import Event
+from app.models.stream_models import RtmpEndpoint
 
 if TYPE_CHECKING:
-    from app.models.twitch.twitch_models import TwitchToken
+    from app.models.connection_model import Connection
     from app.models.payment_models import Subscription
 
 
@@ -27,34 +29,24 @@ class User(Base):
         index=True,
         nullable=False,
     )
-    keycloak_id: Mapped[str] = mapped_column(
-        String, unique=True, index=True, nullable=False
-    )
+    keycloak_id: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     roles: Mapped[str] = mapped_column(String, default="moderator", nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now(), onupdate=datetime.now(), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     unlimited_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     has_used_free_trial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    default_resolution: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True
-    )
+    default_resolution: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    # Relationships – note the use of fully qualified names if needed or move to __init__.py import order
+    # Relationships
     rtmp_endpoints: Mapped[list[RtmpEndpoint]] = relationship(
         "RtmpEndpoint", back_populates="user", cascade="all, delete-orphan"
     )
-    bbb_meetings: Mapped[list[BbbMeeting]] = relationship(
-        "BbbMeeting", back_populates="user", cascade="all, delete-orphan"
-    )
+    bbb_meetings: Mapped[list[BbbMeeting]] = relationship("BbbMeeting", back_populates="user", cascade="all, delete-orphan")
     channels: Mapped[list[Channel]] = relationship(
         "app.models.channel.channels_model.Channel",
         back_populates="creator",
@@ -72,23 +64,21 @@ class User(Base):
         cascade_backrefs=False,
         passive_deletes=True,
     )
-    twitch_tokens: Mapped[List["TwitchToken"]] = relationship(
-        "TwitchToken", back_populates="user", cascade="all, delete-orphan"
-    )
-    subscription: Mapped[Optional["Subscription"]] = relationship(
+    connections: Mapped[list[Connection]] = relationship("Connection", back_populates="user", cascade="all, delete-orphan")
+    subscription: Mapped[Subscription | None] = relationship(
         "Subscription",
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
     )
 
-    def get_roles_list(self) -> List[str]:
+    def get_roles_list(self) -> list[str]:
         """Get roles as a list from comma-separated string"""
         if not self.roles:
             return []
         return [role.strip() for role in self.roles.split(",") if role.strip()]
 
-    def set_roles_list(self, roles: List[str]) -> None:
+    def set_roles_list(self, roles: list[str]) -> None:
         """Set roles from a list to comma-separated string"""
         if roles:  # Only update if roles is not empty
             self.roles = ",".join(roles)
@@ -111,13 +101,11 @@ class User(Base):
         """Check if user has moderator role"""
         return self.has_role("moderator")
 
-    def get_active_twitch_token(self) -> Optional["TwitchToken"]:
-        """Get the user's active Twitch token"""
-        from datetime import datetime
-
-        for token in self.twitch_tokens:
-            if token.is_active and token.expires_at > datetime.now():
-                return token
+    def get_active_connection(self, provider: str) -> Connection | None:
+        """Get the user's active connection for a given provider"""
+        for conn in self.connections:
+            if conn.provider == provider and conn.is_active and not conn.is_expired:
+                return conn
         return None
 
     def __repr__(self) -> str:

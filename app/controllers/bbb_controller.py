@@ -1,26 +1,30 @@
-from fastapi import APIRouter, Body, Depends, Request, BackgroundTasks, HTTPException
+import logging
+from uuid import UUID
+
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
+from app.controllers.user_controller import get_current_user
+from app.models.bbb_schemas import (
+    CreateMeetingRequest,
+    EndMeetingRequest,
+    GetMeetingInfoRequest,
+    GetRecordingRequest,
+    IsMeetingRunningRequest,
+    JoinMeetingRequest,
+)
+from app.models.user_models import User
 
 # Replace with cached services:
 from app.services.cached.bbb_service_cached import BBBServiceCached
 from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
-from app.models.bbb_schemas import (
-    CreateMeetingRequest,
-    JoinMeetingRequest,
-    EndMeetingRequest,
-    GetMeetingInfoRequest,
-    IsMeetingRunningRequest,
-    GetRecordingRequest,
-)
-from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
-from uuid import UUID
 from app.services.chat_context import set_user_mapping
 
 router = APIRouter(prefix="/api/bbb", tags=["BigBlueButton"])
-# bbb_service = BBBService()
 bbb_service = BBBServiceCached()
+
+logger = logging.getLogger("BBBController")
 
 
 @router.get("/")
@@ -40,11 +44,13 @@ async def create_meeting(
         user_id=UUID(str(current_user.id)),
         db=db,
     )
-    await set_user_mapping(
-        meeting_id=result.get("internalMeetingID"),
-        user_id=str(current_user.id),
-        ttl=86400,
-    )
+    internal_meeting_id = result.get("internalMeetingID")
+    if internal_meeting_id:
+        await set_user_mapping(
+            meeting_id=internal_meeting_id,
+            user_id=str(current_user.id),
+            ttl=86400,
+        )
     return result
 
 
@@ -55,9 +61,7 @@ def join_meeting(request: JoinMeetingRequest = Body(...)):
 
 
 @router.post("/end")
-async def end_meeting(
-    request: EndMeetingRequest = Body(...), db: AsyncSession = Depends(get_db)
-):
+async def end_meeting(request: EndMeetingRequest = Body(...), db: AsyncSession = Depends(get_db)):
     """End a BBB meeting."""
     result = await bbb_service.end_meeting(request=request, db=db)
     return result
@@ -88,9 +92,7 @@ async def get_recordings(request: GetRecordingRequest = Body(...)):
 
 
 @router.get("/callback/meeting-ended")
-async def meeting_ended_callback(
-    request: Request, event_id: UUID, db: AsyncSession = Depends(get_db)
-):
+async def meeting_ended_callback(request: Request, event_id: UUID, db: AsyncSession = Depends(get_db)):
     """Callback endpoint for when a BBB meeting ends."""
     try:
         params = dict(request.query_params)
@@ -98,9 +100,7 @@ async def meeting_ended_callback(
         if not meeting_id:
             return {"error": "Missing meetingID in query parameters"}
 
-        result = await bbb_service.meeting_ended_callback(
-            meeting_id=meeting_id, db=db, event_id=event_id
-        )
+        result = await bbb_service.meeting_ended_callback(meeting_id=meeting_id, db=db, event_id=event_id)
         return result
     except Exception as e:
         return {"error": str(e)}
@@ -116,9 +116,7 @@ async def cleanup_old_meetings(
     This is a background task that runs asynchronously.
     """
     background_tasks.add_task(bbb_service._clean_up_meetings_background, days=days)
-    return {
-        "message": f"Cleanup task for meetings older than {days} days has been started."
-    }
+    return {"message": f"Cleanup task for meetings older than {days} days has been started."}
 
 
 @router.get("/proxy/stream-endpoints")
@@ -148,9 +146,7 @@ async def get_meeting_by_internal_id(
     Get a BBB meeting by its internal meeting ID.
     """
     try:
-        meeting = await bbb_service.get_meeting_by_internal_id(
-            internal_meeting_id=internal_meeting_id, db=db
-        )
+        meeting = await bbb_service.get_meeting_by_internal_id(internal_meeting_id=internal_meeting_id, db=db)
         if not meeting:
             raise HTTPException(status_code=404, detail="Meeting not found")
         return meeting

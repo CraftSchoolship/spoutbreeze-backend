@@ -1,14 +1,14 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class UserBase(BaseModel):
     username: str
     email: EmailStr
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class UserCreate(UserBase):
@@ -20,16 +20,16 @@ class UserResponse(UserBase):
     id: UUID
     keycloak_id: str
     roles: str
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class UpdateProfileRequest(BaseModel):
-    email: Optional[EmailStr] = Field(None, min_length=1, max_length=50)
-    first_name: Optional[str] = Field(None, min_length=1, max_length=50)
-    last_name: Optional[str] = Field(None, min_length=1, max_length=50)
+    email: EmailStr | None = Field(None, min_length=1, max_length=50)
+    first_name: str | None = Field(None, min_length=1, max_length=50)
+    last_name: str | None = Field(None, min_length=1, max_length=50)
 
     @field_validator("email")
     def validate_email(cls, v):
@@ -44,9 +44,7 @@ class UpdateProfileRequest(BaseModel):
 
 
 class UpdateUserRoleRequest(BaseModel):
-    role: str = Field(
-        ..., min_length=1, max_length=50, description="The new role for the user"
-    )
+    role: str = Field(..., min_length=1, max_length=50, description="The new role for the user")
 
     @field_validator("role")
     def validate_role(cls, v):

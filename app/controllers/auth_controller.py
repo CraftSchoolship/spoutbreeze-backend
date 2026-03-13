@@ -1,37 +1,46 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal, cast
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import (
-    OAuth2AuthorizationCodeBearer,
     HTTPBearer,
+    OAuth2AuthorizationCodeBearer,
 )
-from app.services.auth_service import AuthService
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.database.session import get_db
+from app.config.logger_config import logger
+from app.config.settings import get_settings, keycloak_openid
+from app.controllers.user_controller import get_current_user
 from app.models.auth_models import (
     TokenRequest,
     TokenResponse,
 )
-from app.config.settings import keycloak_openid, get_settings
-from app.config.database.session import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy import select
 from app.models.user_models import User
-from app.controllers.user_controller import get_current_user
-from typing import cast, Dict, Any, Optional
-from datetime import timedelta
-
-from app.config.logger_config import logger
-from pydantic import BaseModel
-
+from app.services.auth_service import AuthService
 
 bearer_scheme = HTTPBearer()
 settings = get_settings()
 
 router = APIRouter(prefix="/api", tags=["Authentication"])
 
-# OAuth2 scheme for token extraction
+
+def _get_well_known() -> dict:
+    """Lazy-load Keycloak well-known config to avoid import-time network calls."""
+    if not hasattr(_get_well_known, "_cache"):
+        _get_well_known._cache = keycloak_openid.well_known()  # type: ignore[attr-defined]
+    return _get_well_known._cache  # type: ignore[attr-defined]
+
+
+# OAuth2 scheme for token extraction — uses placeholder URLs that are
+# only relevant for the OpenAPI docs page; actual token validation
+# happens in AuthService.validate_token.
 oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=f"{keycloak_openid.well_known()['authorization_endpoint']}",
-    tokenUrl=f"{keycloak_openid.well_known()['token_endpoint']}",
+    authorizationUrl="deferred://keycloak/auth",
+    tokenUrl="deferred://keycloak/token",
 )
 
 auth_service = AuthService()
@@ -41,7 +50,7 @@ class ProtectedRouteResponse(BaseModel):
     message: str
 
 
-def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
+def set_auth_cookies(response: Response, token_data: dict[str, Any]) -> None:
     """
     Set authentication cookies with proper configuration
 
@@ -50,15 +59,13 @@ def set_auth_cookies(response: Response, token_data: Dict[str, Any]) -> None:
         token_data: Dictionary containing access_token, refresh_token, expires_in
     """
     # Calculate expiration times
-    access_token_expires = datetime.now(timezone.utc) + timedelta(
-        seconds=token_data.get("expires_in", 300)
-    )
-    refresh_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
+    access_token_expires = datetime.now(UTC) + timedelta(seconds=token_data.get("expires_in", 300))
+    refresh_token_expires = datetime.now(UTC) + timedelta(days=30)
 
     # Determine cookie settings based on environment
     is_production = settings.env == "production"
     cookie_domain = settings.domain if is_production else None
-    samesite_setting = (
+    samesite_setting: Literal["lax", "strict", "none"] = (
         "none" if is_production else "lax"
     )  # "none" required for cross-domain in production
 
@@ -123,7 +130,7 @@ def clear_auth_cookies(response: Response) -> None:
             )
 
 
-def extract_keycloak_roles(user_info: dict, client_id: str) -> Optional[list]:
+def extract_keycloak_roles(user_info: dict, client_id: str) -> list | None:
     """Extract client roles from Keycloak user info"""
     logger.info(f"Extracting roles for client_id: {client_id}")
 
@@ -141,9 +148,7 @@ def extract_keycloak_roles(user_info: dict, client_id: str) -> Optional[list]:
     return roles
 
 
-async def process_user_info(
-    user_info: dict, user_roles: Optional[list], db: AsyncSession
-) -> User:
+async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncSession) -> User:
     """
     Process user information and create/update user in database
 
@@ -183,16 +188,10 @@ async def process_user_info(
         return new_user
     else:
         # Update the existing user information
-        existing_user.username = str(
-            user_info.get("preferred_username", existing_user.username)
-        )
+        existing_user.username = str(user_info.get("preferred_username", existing_user.username))
         existing_user.email = str(user_info.get("email", existing_user.email))
-        existing_user.first_name = str(
-            user_info.get("given_name", existing_user.first_name)
-        )
-        existing_user.last_name = str(
-            user_info.get("family_name", existing_user.last_name)
-        )
+        existing_user.first_name = str(user_info.get("given_name", existing_user.first_name))
+        existing_user.last_name = str(user_info.get("family_name", existing_user.last_name))
         existing_user.updated_at = datetime.now()
 
         # Only update roles if we got some from Keycloak
@@ -219,14 +218,10 @@ async def protected_route(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/token")
-async def exchange_token(
-    request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)
-):
+async def exchange_token(request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Exchange authorization code for tokens and set secure cookies"""
     try:
-        token_data = auth_service.exchange_token(
-            request.code, request.redirect_uri, request.code_verifier
-        )
+        token_data = auth_service.exchange_token(request.code, request.redirect_uri, request.code_verifier)
 
         # Extract the access token
         access_token = token_data.get("access_token")

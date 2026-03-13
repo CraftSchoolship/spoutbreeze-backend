@@ -1,7 +1,8 @@
 import hashlib
 import xml.etree.ElementTree as ET
+from typing import Any
+
 from fastapi import HTTPException
-from typing import Dict, Any
 
 
 def generate_checksum(call_name: str, query_params: str, shared_secret: str) -> str:
@@ -10,11 +11,11 @@ def generate_checksum(call_name: str, query_params: str, shared_secret: str) -> 
     return hashlib.sha1(checksum_string.encode("utf-8")).hexdigest()
 
 
-def parse_xml_response(xml_content: bytes, api_call: str) -> Dict[str, Any]:
+def parse_xml_response(xml_content: bytes, api_call: str) -> dict[str, Any]:
     """Parses the XML response from BBB API."""
     try:
         root = ET.fromstring(xml_content)
-        result: Dict[str, Any] = {"returncode": root.findtext("returncode")}
+        result: dict[str, Any] = {"returncode": root.findtext("returncode")}
 
         if result["returncode"] == "SUCCESS":
             # Process all child elements
@@ -25,18 +26,16 @@ def parse_xml_response(xml_content: bytes, api_call: str) -> Dict[str, Any]:
                 # Handle complex nested structures (meetings, recordings, etc.)
                 if len(child) > 0:  # Check if this element has children
                     # Handle collection elements like 'meetings', 'recordings'
-                    if all(
-                        item.tag == child.tag[:-1] for item in child
-                    ):  # Check if children follow naming pattern
+                    if all(item.tag == child.tag[:-1] for item in child):  # Check if children follow naming pattern
                         collection = []
                         for item in child:
-                            item_dict: Dict[str, Any] = {}
+                            item_dict: dict[str, Any] = {}
                             _extract_element_data(item, item_dict)
                             collection.append(item_dict)
                         result[child.tag] = collection
                     else:
                         # For other nested structures
-                        nested_dict: Dict[str, Any] = {}
+                        nested_dict: dict[str, Any] = {}
                         _extract_element_data(child, nested_dict)
                         result[child.tag] = nested_dict
                 else:
@@ -52,7 +51,7 @@ def parse_xml_response(xml_content: bytes, api_call: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail="Failed to parse BBB response")
 
 
-def _extract_element_data(element: ET.Element, target_dict: Dict[str, Any]) -> None:
+def _extract_element_data(element: ET.Element, target_dict: dict[str, Any]) -> None:
     """Helper function to recursively extract data from XML elements."""
     for child in element:
         # Handle complex nested elements (like playback, metadata)
@@ -61,12 +60,12 @@ def _extract_element_data(element: ET.Element, target_dict: Dict[str, Any]) -> N
             if all(item.tag == child.tag[:-1] for item in child) and len(child) > 0:
                 collection = []
                 for item in child:
-                    item_dict: Dict[str, Any] = {}
+                    item_dict: dict[str, Any] = {}
                     _extract_element_data(item, item_dict)
                     collection.append(item_dict)
                 target_dict[child.tag] = collection
             else:
-                nested_dict: Dict[str, Any] = {}
+                nested_dict: dict[str, Any] = {}
                 _extract_element_data(child, nested_dict)
                 target_dict[child.tag] = nested_dict
         else:

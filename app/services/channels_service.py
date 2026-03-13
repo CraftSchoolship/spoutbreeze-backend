@@ -1,3 +1,10 @@
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import delete, select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config.logger_config import logger
 from app.models.channel.channels_model import Channel
 from app.models.channel.channels_schemas import (
     ChannelCreate,
@@ -5,12 +12,6 @@ from app.models.channel.channels_schemas import (
     ChannelUpdate,
 )
 from app.models.user_models import User
-from uuid import UUID
-from typing import List, Optional, Dict, Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete
-from app.config.logger_config import logger
 
 
 class ChannelsService:
@@ -18,9 +19,7 @@ class ChannelsService:
     Service class for managing channels.
     """
 
-    def _create_channel_response(
-        self, channel: Channel, creator: User
-    ) -> ChannelResponse:
+    def _create_channel_response(self, channel: Channel, creator: User) -> ChannelResponse:
         """
         Create a ChannelResponse with creator information.
         """
@@ -67,22 +66,17 @@ class ChannelsService:
         self,
         db: AsyncSession,
         user_id: UUID,
-    ) -> List[ChannelResponse]:
+    ) -> list[ChannelResponse]:
         """
         Get all channels for a user.
         """
         try:
             result = await db.execute(
-                select(Channel, User)
-                .join(User, Channel.creator_id == User.id)
-                .where(Channel.creator_id == user_id)
+                select(Channel, User).join(User, Channel.creator_id == User.id).where(Channel.creator_id == user_id)
             )
             channel_creator_pairs = result.all()
 
-            channels = [
-                self._create_channel_response(channel, creator)
-                for channel, creator in channel_creator_pairs
-            ]
+            channels = [self._create_channel_response(channel, creator) for channel, creator in channel_creator_pairs]
 
             logger.info(f"Retrieved {len(channels)} channels for user {user_id}")
             return channels
@@ -94,15 +88,13 @@ class ChannelsService:
         self,
         db: AsyncSession,
         channel_id: UUID,
-    ) -> Optional[ChannelResponse]:
+    ) -> ChannelResponse | None:
         """
         Get a channel by its ID.
         """
         try:
             result = await db.execute(
-                select(Channel, User)
-                .join(User, Channel.creator_id == User.id)
-                .where(Channel.id == channel_id)
+                select(Channel, User).join(User, Channel.creator_id == User.id).where(Channel.id == channel_id)
             )
             channel_creator_pair = result.first()
 
@@ -120,20 +112,15 @@ class ChannelsService:
     async def get_channels(
         self,
         db: AsyncSession,
-    ) -> List[ChannelResponse]:
+    ) -> list[ChannelResponse]:
         """
         Get all channels.
         """
         try:
-            result = await db.execute(
-                select(Channel, User).join(User, Channel.creator_id == User.id)
-            )
+            result = await db.execute(select(Channel, User).join(User, Channel.creator_id == User.id))
             channel_creator_pairs = result.all()
 
-            channels = [
-                self._create_channel_response(channel, creator)
-                for channel, creator in channel_creator_pairs
-            ]
+            channels = [self._create_channel_response(channel, creator) for channel, creator in channel_creator_pairs]
 
             logger.info(f"Retrieved {len(channels)} channels")
             return channels
@@ -146,7 +133,7 @@ class ChannelsService:
         db: AsyncSession,
         channel_name: str,
         user_id: UUID,
-    ) -> Optional[Channel]:
+    ) -> Channel | None:
         """
         Get a channel by its name.
         """
@@ -161,9 +148,7 @@ class ChannelsService:
             if channel:
                 logger.info(f"Retrieved channel {channel.name} for user {user_id}")
             else:
-                logger.warning(
-                    f"Channel with name {channel_name} not found for user {user_id}"
-                )
+                logger.warning(f"Channel with name {channel_name} not found for user {user_id}")
             return channel
         except Exception as e:
             logger.error(f"Error retrieving channel with name {channel_name}: {e}")
@@ -175,7 +160,7 @@ class ChannelsService:
         channel_id: UUID,
         channel_update: ChannelUpdate,
         user_id: UUID,
-    ) -> Optional[ChannelResponse]:
+    ) -> ChannelResponse | None:
         """
         Update a channel by ID.
         """
@@ -192,20 +177,14 @@ class ChannelsService:
         channel_creator_pair = result.first()
 
         if not channel_creator_pair:
-            logger.warning(
-                f"Channel with ID {channel_id} not found or does not belong to user {user_id}"
-            )
+            logger.warning(f"Channel with ID {channel_id} not found or does not belong to user {user_id}")
             return None
 
         channel, creator = channel_creator_pair
 
         try:
-            update_data = {
-                k: v for k, v in channel_update.model_dump().items() if v is not None
-            }
-            update_stmt = (
-                update(Channel).where(Channel.id == channel_id).values(**update_data)
-            )
+            update_data = {k: v for k, v in channel_update.model_dump().items() if v is not None}
+            update_stmt = update(Channel).where(Channel.id == channel_id).values(**update_data)
             await db.execute(update_stmt)
             await db.commit()
             await db.refresh(channel)
@@ -233,9 +212,7 @@ class ChannelsService:
         result = await db.execute(query)
         channel = result.scalar_one_or_none()
         if not channel:
-            logger.warning(
-                f"Channel with ID {channel_id} not found or does not belong to user {user_id}"
-            )
+            logger.warning(f"Channel with ID {channel_id} not found or does not belong to user {user_id}")
             return False
         try:
             delete_stmt = delete(Channel).where(Channel.id == channel_id)
@@ -289,7 +266,7 @@ class ChannelsService:
         db: AsyncSession,
         channel_id: UUID,
         user_id: UUID,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get all recordings for events in a specific channel.
         """
@@ -315,9 +292,7 @@ class ChannelsService:
             events = events_result.scalars().all()
 
             if not events:
-                logger.info(
-                    f"No events with meetings found for channel ID {channel_id}"
-                )
+                logger.info(f"No events with meetings found for channel ID {channel_id}")
                 return {
                     "recordings": [],
                     "total_recordings": 0,
@@ -325,8 +300,9 @@ class ChannelsService:
 
             # Get recordings for all events in parallel
             import asyncio
-            from app.services.bbb_service import BBBService
+
             from app.models.bbb_schemas import GetRecordingRequest
+            from app.services.bbb_service import BBBService
 
             bbb_service = BBBService()
 
@@ -336,18 +312,14 @@ class ChannelsService:
                     recording_request = GetRecordingRequest(meeting_id=event.meeting_id)
                     # Make this async if possible, or use asyncio.to_thread for sync calls
                     loop = asyncio.get_event_loop()
-                    recordings_response = await loop.run_in_executor(
-                        None, bbb_service.get_recordings, recording_request
-                    )
+                    recordings_response = await loop.run_in_executor(None, bbb_service.get_recordings, recording_request)
 
                     if recordings_response.get("returncode") == "SUCCESS":
                         recordings = recordings_response.get("recordings", [])
                         return recordings if recordings else []
                     return []
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to get recordings for event {event.id}: {e}"
-                    )
+                    logger.warning(f"Failed to get recordings for event {event.id}: {e}")
                     return []
 
             # Execute all API calls in parallel
@@ -355,7 +327,7 @@ class ChannelsService:
             recordings_results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Flatten results
-            all_recordings: List[Dict[str, Any]] = []
+            all_recordings: list[dict[str, Any]] = []
             for result in recordings_results:
                 if isinstance(result, list):
                     all_recordings.extend(result)

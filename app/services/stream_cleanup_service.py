@@ -1,9 +1,11 @@
 import logging
-from app.services.chat_context import get_user_streams, remove_user_stream
-from app.services.broadcaster_service import BroadcasterService
-from app.models.user_models import User
-from sqlalchemy.ext.asyncio import AsyncSession
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user_models import User
+from app.services.broadcaster_service import BroadcasterService
+from app.services.chat_context import get_user_streams, remove_user_stream
 
 logger = logging.getLogger("StreamCleanupService")
 
@@ -35,9 +37,7 @@ class StreamCleanupService:
                     except Exception:
                         # Stream doesn't exist or failed, remove from Redis
                         await remove_user_stream(stream_id)
-                        logger.info(
-                            f"Cleaned up stale stream {stream_id} for user {user_id}"
-                        )
+                        logger.info(f"Cleaned up stale stream {stream_id} for user {user_id}")
 
             logger.info("Stream cleanup completed")
         except Exception as e:

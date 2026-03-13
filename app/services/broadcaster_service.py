@@ -1,25 +1,27 @@
-from requests import Timeout as RequestsTimeout
-from fastapi import HTTPException
-from fastapi.concurrency import run_in_threadpool
-from typing import Dict, Any, Optional
-import requests
 import logging
 from collections import defaultdict
+from typing import Any
+
+import requests
+from fastapi import HTTPException
+from fastapi.concurrency import run_in_threadpool
+from requests import Timeout as RequestsTimeout
+from sqlalchemy import select
+
+from app.config.redis_config import cache
+from app.config.settings import get_settings
 from app.models.bbb_schemas import (
     BroadcasterRequest,
-    IsMeetingRunningRequest,
     GetMeetingInfoRequest,
+    IsMeetingRunningRequest,
     JoinMeetingRequest,
     PluginManifests,
     StreamConfig,
 )
-from app.config.settings import get_settings
-from app.config.redis_config import cache
+from app.models.user_models import User
 from app.services.bbb_service import BBBService
 from app.services.chat_gateway_client import chat_gateway_client
 from app.services.payment_service import PaymentService
-from sqlalchemy import select
-from app.models.user_models import User
 
 logger = logging.getLogger("BroadcasterService")
 
@@ -65,7 +67,13 @@ class StreamTracker:
                 raw_user = await cache.get(f"streams:stream_to_user:{stream_id}")
                 user_id = raw_user.decode() if isinstance(raw_user, bytes) else raw_user if isinstance(raw_user, str) else None
                 raw_platform = await cache.get(f"streams:platform:{stream_id}")
-                platform = raw_platform.decode() if isinstance(raw_platform, bytes) else raw_platform if isinstance(raw_platform, str) else None
+                platform = (
+                    raw_platform.decode()
+                    if isinstance(raw_platform, bytes)
+                    else raw_platform
+                    if isinstance(raw_platform, str)
+                    else None
+                )
 
                 if user_id:
                     await cache.srem(f"streams:user:{user_id}", stream_id)
@@ -104,6 +112,7 @@ class StreamTracker:
             logger.warning(f"Redis stream members failed, using fallback: {e}")
         return StreamTracker._fallback_user_streams.get(user_id, set()).copy()
 
+
 # Quality order helper
 _QUALITY_ORDER: dict[str, int] = {
     "360p": 0,
@@ -115,7 +124,7 @@ _QUALITY_ORDER: dict[str, int] = {
 }
 
 
-def _clamp_resolution(requested: Optional[str], max_quality: str) -> str:
+def _clamp_resolution(requested: str | None, max_quality: str) -> str:
     """
     Return the requested resolution if it is <= max_quality; otherwise return max_quality.
     If requested is None/invalid, fall back to max_quality.
@@ -149,8 +158,8 @@ class BroadcasterService:
         bbb_service: BBBService,
         user_id: str,
         db,
-        requested_resolution: Optional[str] = None,  # <-- NEW parameter
-    ) -> Dict[str, Any]:
+        requested_resolution: str | None = None,  # <-- NEW parameter
+    ) -> dict[str, Any]:
         try:
             result = await db.execute(select(User).where(User.id == user_id))
             user = result.scalar_one_or_none()
@@ -175,10 +184,7 @@ class BroadcasterService:
 
             # Concurrent stream check via StreamTracker
             active_stream_count = await StreamTracker.get_active_stream_count(user_id)
-            if (
-                max_concurrent_streams is not None
-                and active_stream_count >= max_concurrent_streams
-            ):
+            if max_concurrent_streams is not None and active_stream_count >= max_concurrent_streams:
                 raise HTTPException(
                     status_code=403,
                     detail=(
@@ -189,9 +195,7 @@ class BroadcasterService:
                 )
 
             # Meeting running check
-            bbb_service.is_meeting_running(
-                request=IsMeetingRunningRequest(meeting_id=meeting_id)
-            )
+            bbb_service.is_meeting_running(request=IsMeetingRunningRequest(meeting_id=meeting_id))
             meeting_info = bbb_service.get_meeting_info(
                 request=GetMeetingInfoRequest(meeting_id=meeting_id, password=password)
             )
@@ -240,9 +244,7 @@ class BroadcasterService:
             data = response.json()
             stream_id = data.get("stream_id")
             if not stream_id:
-                raise HTTPException(
-                    status_code=502, detail="Broadcaster response missing stream_id"
-                )
+                raise HTTPException(status_code=502, detail="Broadcaster response missing stream_id")
 
             platform_lower = platform.lower()
             platform_connected = None
@@ -277,18 +279,14 @@ class BroadcasterService:
             }
 
         except RequestsTimeout:
-            raise HTTPException(
-                status_code=504, detail="Broadcaster API timed out (network issue)"
-            )
+            raise HTTPException(status_code=504, detail="Broadcaster API timed out (network issue)")
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Start failed: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"Broadcaster start failed: {str(e)}"
-            )
+            raise HTTPException(status_code=500, detail=f"Broadcaster start failed: {str(e)}")
 
-    async def fetch_status(self, stream_id: str) -> Dict[str, Any]:
+    async def fetch_status(self, stream_id: str) -> dict[str, Any]:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_get():
@@ -299,11 +297,9 @@ class BroadcasterService:
             response.raise_for_status()
             return response.json()
         except RequestsTimeout:
-            raise HTTPException(
-                status_code=504, detail="Broadcaster status check timed out"
-            )
+            raise HTTPException(status_code=504, detail="Broadcaster status check timed out")
 
-    async def stop_broadcast(self, stream_id: str) -> Dict[str, Any]:
+    async def stop_broadcast(self, stream_id: str) -> dict[str, Any]:
         url = f"{self.broadcaster_api_url}/{stream_id}"
 
         def do_delete():

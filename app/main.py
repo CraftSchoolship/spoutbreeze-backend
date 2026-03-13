@@ -1,39 +1,38 @@
-import asyncio
+import time
+from contextlib import asynccontextmanager
+
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
+from apscheduler.triggers.cron import CronTrigger  # type: ignore
+from apscheduler.triggers.interval import IntervalTrigger  # type: ignore
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from contextlib import asynccontextmanager
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore
-from apscheduler.triggers.cron import CronTrigger  # type: ignore
-import time
 
-from app.services.bbb_service import BBBService
-from app.services.stream_cleanup_service import StreamCleanupService
-
-# Import models to ensure they are registered with SQLAlchemy
-from app.models import user_models, payment_models, youtube_models  # noqa: F401
-from app.models.twitch import twitch_models  # noqa: F401
-
+from app.config.database.session import SessionLocal
+from app.config.logger_config import get_logger
+from app.config.redis_config import cache
+from app.config.settings import get_settings
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router
 from app.controllers.broadcaster_controller import router as broadcaster_router
-from app.controllers.user_controller import router as user_router
-from app.controllers.rtmp_controller import router as stream_router
 from app.controllers.channels_controller import router as channels_router
 from app.controllers.event_controller import router as event_router
+from app.controllers.facebook_controller import router as facebook_router
+from app.controllers.facebook_stream_controller import router as facebook_stream_router
 from app.controllers.health_controller import router as health_router
-from app.controllers.twitch_controller import router as twitch_router
-from app.controllers.youtube_controller import router as youtube_router
-from app.controllers.payment_controller import router as payment_router
 from app.controllers.internal_controller import router as internal_router
+from app.controllers.payment_controller import router as payment_router
+from app.controllers.rtmp_controller import router as stream_router
+from app.controllers.twitch_controller import router as twitch_router
+from app.controllers.user_controller import router as user_router
+from app.controllers.youtube_controller import router as youtube_router
 
-
-# from app.config.twitch_irc import TwitchIRCClient
-from app.config.logger_config import get_logger
-from app.config.settings import get_settings
-from app.config.redis_config import cache
-from app.config.database.session import SessionLocal
+# Import models to ensure they are registered with SQLAlchemy
+from app.models import connection_model, payment_models, user_models  # noqa: F401
+from app.services.bbb_service import BBBService
+from app.services.stream_cleanup_service import StreamCleanupService
+from app.services.token_refresh_service import TokenRefreshService
 
 logger = get_logger("Main")
 setting = get_settings()
@@ -49,6 +48,17 @@ async def lifespan(app: FastAPI):
     Lifespan context manager for the FastAPI application
     """
     logger.info("=== APPLICATION STARTUP ===")
+
+    # Patch OAuth2 scheme with real Keycloak URLs (now that Keycloak should be reachable)
+    try:
+        from app.controllers.auth_controller import _get_well_known, oauth2_scheme
+
+        wk = _get_well_known()
+        oauth2_scheme.model.flows.authorizationCode.authorizationUrl = wk["authorization_endpoint"]  # type: ignore[union-attr, attr-defined]
+        oauth2_scheme.model.flows.authorizationCode.tokenUrl = wk["token_endpoint"]  # type: ignore[union-attr, attr-defined]
+        logger.info("[Auth] Keycloak well-known URLs loaded for OpenAPI docs")
+    except Exception as e:
+        logger.warning(f"[Auth] Could not load Keycloak well-known URLs: {e}")
 
     # Startup: Configure OpenAPI schema
     openapi_schema = get_openapi(
@@ -80,13 +90,6 @@ async def lifespan(app: FastAPI):
     await cache.connect()
     logger.info("[cache] Redis cache connected")
 
-    # Startup: schedule the IRC client
-    # twitch_tasks = asyncio.gather(
-    #     twitch_client.connect(),
-    #     # twitch_client.start_token_refresh_scheduler(),
-    #     return_exceptions=True,
-    # )
-
     logger.info("[TwitchIRC] Background connect and token refresh tasks scheduled")
 
     # Set up scheduler for bbb meeting cleanup
@@ -99,23 +102,49 @@ async def lifespan(app: FastAPI):
         misfire_grace_time=3600,  # 1 hour
         kwargs={"days": 30},
     )
-    scheduler.start()
     logger.info("[Scheduler] BBB meeting cleanup job scheduled")
+
+    # Set up scheduler for stream cleanup (every 5 minutes)
+    async def _stream_cleanup_job():
+        async with SessionLocal() as db:
+            await StreamCleanupService.cleanup_stale_streams(db)
+
+    scheduler.add_job(
+        _stream_cleanup_job,
+        trigger=IntervalTrigger(minutes=5),
+        id="stream_cleanup_job",
+        name="Stream Cleanup Job",
+        replace_existing=True,
+        misfire_grace_time=60,
+    )
+    logger.info("[Scheduler] Stream cleanup job scheduled (every 5 min)")
+
+    # Set up scheduler for token refresh (every 30 minutes)
+    async def _token_refresh_job():
+        async with SessionLocal() as db:
+            await TokenRefreshService.refresh_expiring_tokens(db)
+
+    scheduler.add_job(
+        _token_refresh_job,
+        trigger=IntervalTrigger(minutes=30),
+        id="token_refresh_job",
+        name="Token Refresh Job",
+        replace_existing=True,
+        misfire_grace_time=600,  # 10 min grace
+    )
+    logger.info("[Scheduler] Token refresh job scheduled (every 30 min)")
+
+    scheduler.start()
 
     logger.info("=== APPLICATION STARTUP COMPLETE ===")
 
     yield  # App is running
 
     logger.info("=== APPLICATION SHUTDOWN ===")
+    scheduler.shutdown(wait=False)
+    logger.info("[Scheduler] Shut down")
     await cache.close()
     logger.info("[cache] Redis cache connection closed")
-
-    # Shutdown: cancel the IRC task
-    # twitch_tasks.cancel()
-    # try:
-    #     await twitch_tasks
-    # except asyncio.CancelledError:
-    #     logger.info("[TwitchIRC] Connect task cancelled cleanly")
 
     logger.info("=== APPLICATION SHUTDOWN COMPLETE ===")
 
@@ -169,9 +198,7 @@ async def custom_swagger_ui_html():
 
 
 # Parse CORS origins from settings (comma-separated string)
-origins = [
-    origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()
-]
+origins = [origin.strip() for origin in setting.cors_origins.split(",") if origin.strip()]
 
 # Configure CORS with both explicit origins and regex pattern support
 app.add_middleware(
@@ -213,46 +240,12 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(twitch_router, prefix="/api")
 app.include_router(youtube_router, prefix="/api")
+app.include_router(facebook_router, prefix="/api")
 app.include_router(user_router)
 app.include_router(channels_router)
 app.include_router(event_router)
 app.include_router(stream_router)
 app.include_router(broadcaster_router)
 app.include_router(bbb_router)
+app.include_router(facebook_stream_router)
 app.include_router(payment_router)
-
-
-# @app.websocket("/ws/chat/")
-# async def chat_endpoint(websocket: WebSocket):
-#     """
-#     WebSocket endpoint for chat messages
-#     """
-#     logger.info("WebSocket connection requested")
-#     await chat_manager.connect(websocket)
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             if data.startswith("/twitch"):
-#                 message = data[len("/twitch ") :]
-#                 await twitch_client.send_message(message)
-#                 logger.info(f"[TwitchIRC] Sending message: {message}")
-#             else:
-#                 await chat_manager.broadcast(data)
-#     except WebSocketDisconnect:
-#         chat_manager.disconnect(websocket)
-#         logger.info("[Chat] Client disconnected")
-
-
-async def periodic_stream_cleanup():
-    while True:
-        try:
-            async with SessionLocal() as db:
-                await StreamCleanupService.cleanup_stale_streams(db)
-        except Exception as e:
-            logger.error(f"Periodic cleanup error: {e}")
-        await asyncio.sleep(300)  # Run every 5 minutes
-
-
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(periodic_stream_cleanup())

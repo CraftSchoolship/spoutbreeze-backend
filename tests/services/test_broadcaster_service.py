@@ -1,5 +1,6 @@
 import pytest
-from app.services.broadcaster_service import _clamp_resolution, StreamTracker
+
+from app.services.broadcaster_service import StreamTracker, _clamp_resolution
 
 
 class TestClampResolution:

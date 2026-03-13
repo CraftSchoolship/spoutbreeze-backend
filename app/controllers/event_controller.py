@@ -1,23 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict
 from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
-from app.models.event.event_models import Event
-from app.services.chat_context import set_user_mapping
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database.session import get_db
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
+from app.models.event.event_models import Event
 from app.models.event.event_schemas import (
     EventCreate,
-    EventResponse,
     EventListResponse,
+    EventResponse,
     EventUpdate,
     JoinEventRequest,
 )
-from app.services.cached.event_service_cached import EventServiceCached
+from app.models.user_models import User
 from app.services.bbb_service import BBBService
+from app.services.cached.event_service_cached import EventServiceCached
+from app.services.chat_context import set_user_mapping
 
 router = APIRouter(prefix="/api/events", tags=["Events"])
 event_service = EventServiceCached()
@@ -59,12 +59,12 @@ async def create_event(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{event_id}/start", response_model=Dict[str, str])
+@router.post("/{event_id}/start", response_model=dict[str, str])
 async def start_event(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Start an event by ID for the current user.
     Args:
@@ -95,9 +95,7 @@ async def start_event(
                 # Fetch the BBB meeting to get the internal_meeting_id
                 from app.models.bbb_models import BbbMeeting
 
-                bbb_result = await db.execute(
-                    select(BbbMeeting).where(BbbMeeting.meeting_id == event.meeting_id)
-                )
+                bbb_result = await db.execute(select(BbbMeeting).where(BbbMeeting.meeting_id == event.meeting_id))
                 bbb_meeting = bbb_result.scalars().first()
 
                 if bbb_meeting and bbb_meeting.internal_meeting_id:
@@ -109,6 +107,8 @@ async def start_event(
             return start_result
         else:
             raise HTTPException(status_code=400, detail="Failed to start event")
+    except HTTPException:
+        raise
     except ValueError as e:
         # Handle the case where the event ID is not found
         raise HTTPException(status_code=404, detail=str(e))
@@ -117,12 +117,12 @@ async def start_event(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{event_id}/join-url", response_model=Dict[str, str])
+@router.post("/{event_id}/join-url", response_model=dict[str, str])
 async def join_event(
     event_id: UUID,
     request: JoinEventRequest,
     db: AsyncSession = Depends(get_db),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """Get the join URL for an event by ID."""
     try:
         # Get the event to find the creator/organizer
@@ -159,9 +159,7 @@ async def get_upcoming_events(
     try:
         events = await event_service.get_upcoming_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [
-            EventResponse.model_validate(event.__dict__) for event in events
-        ]
+        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -176,9 +174,7 @@ async def get_past_events(
     try:
         events = await event_service.get_past_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [
-            EventResponse.model_validate(event.__dict__) for event in events
-        ]
+        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -193,20 +189,18 @@ async def get_live_events(
     try:
         events = await event_service.get_live_events(db=db, user_id=current_user.id)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [
-            EventResponse.model_validate(event.__dict__) for event in events
-        ]
+        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{event_id}/end", response_model=Dict[str, str])
+@router.post("/{event_id}/end", response_model=dict[str, str])
 async def end_event(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """End an event by ID."""
     try:
         result = await event_service.end_event(
@@ -239,9 +233,7 @@ async def get_all_events(
     try:
         events = await event_service.get_all_events(db=db)
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [
-            EventResponse.model_validate(event.__dict__) for event in events
-        ]
+        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except ValueError as e:
         # Handle the case where no events are found
@@ -305,9 +297,7 @@ async def get_events_by_channel(
             channel_id=channel_id,
         )
         # Convert SQLAlchemy models to Pydantic models
-        event_responses = [
-            EventResponse.model_validate(event.__dict__) for event in events
-        ]
+        event_responses = [EventResponse.model_validate(event.__dict__) for event in events]
         return EventListResponse(events=event_responses, total=len(event_responses))
     except ValueError as e:
         # Handle the case where the channel ID is not found
@@ -352,12 +342,12 @@ async def update_event(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{event_id}", response_model=Dict[str, str])
+@router.delete("/{event_id}", response_model=dict[str, str])
 async def delete_event(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-) -> Dict[str, str]:
+) -> dict[str, str]:
     """
     Delete an event by ID for the current user.
 

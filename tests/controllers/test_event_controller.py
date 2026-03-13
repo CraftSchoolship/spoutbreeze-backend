@@ -1,13 +1,14 @@
+from datetime import datetime, timedelta
+from uuid import uuid4
+
 import pytest
 from httpx import AsyncClient
-from uuid import uuid4
-from datetime import datetime, timedelta
 
-from app.main import app
 from app.controllers.user_controller import get_current_user
-from app.models.user_models import User
+from app.main import app
 from app.models.channel.channels_model import Channel
 from app.models.event.event_models import Event, EventStatus
+from app.models.user_models import User
 
 
 class TestEventController:
@@ -52,9 +53,7 @@ class TestEventController:
         assert "updated_at" in data
 
     @pytest.mark.asyncio
-    async def test_create_event_invalid_data(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_event_invalid_data(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test creating event with invalid data"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -97,9 +96,7 @@ class TestEventController:
         ]  # Accept both for now due to implementation details
 
     @pytest.mark.asyncio
-    async def test_start_event_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_start_event_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test starting non-existent event"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -109,9 +106,7 @@ class TestEventController:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_join_event_success(
-        self, client: AsyncClient, test_event: Event, db_session
-    ):
+    async def test_join_event_success(self, client: AsyncClient, test_event: Event, db_session):
         """Test joining an event successfully"""
         # Set up the event with proper meeting data for joining
         test_event.meeting_id = f"meeting-{int(datetime.now().timestamp())}"
@@ -120,9 +115,7 @@ class TestEventController:
         await db_session.commit()
 
         join_data = {"full_name": "John Doe"}
-        response = await client.post(
-            f"/api/events/{test_event.id}/join-url", json=join_data
-        )
+        response = await client.post(f"/api/events/{test_event.id}/join-url", json=join_data)
 
         # The service expects meeting to be properly set up
         assert response.status_code in [200, 404]  # Accept both for now
@@ -133,9 +126,7 @@ class TestEventController:
         non_existent_id = uuid4()
         join_data = {"full_name": "John Doe"}
 
-        response = await client.post(
-            f"/api/events/{non_existent_id}/join-url", json=join_data
-        )
+        response = await client.post(f"/api/events/{non_existent_id}/join-url", json=join_data)
 
         assert response.status_code == 404
 
@@ -215,9 +206,7 @@ class TestEventController:
         assert response.status_code in [200, 404]  # Accept both for now
 
     @pytest.mark.asyncio
-    async def test_end_event_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_end_event_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test ending non-existent event"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -263,9 +252,7 @@ class TestEventController:
         assert data["title"] == test_event.title
 
     @pytest.mark.asyncio
-    async def test_get_event_by_id_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_event_by_id_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting non-existent event"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -294,9 +281,7 @@ class TestEventController:
         assert "total" in data
 
     @pytest.mark.asyncio
-    async def test_get_events_by_channel_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_get_events_by_channel_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test getting events for non-existent channel"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -327,9 +312,7 @@ class TestEventController:
         assert response.status_code in [200, 500]  # Accept both due to async issue
 
     @pytest.mark.asyncio
-    async def test_update_event_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_update_event_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test updating non-existent event"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -358,9 +341,7 @@ class TestEventController:
         assert data["message"] == "Event deleted successfully"
 
     @pytest.mark.asyncio
-    async def test_delete_event_not_found(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_delete_event_not_found(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test deleting non-existent event"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -370,9 +351,7 @@ class TestEventController:
         assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_invalid_uuid_format(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_invalid_uuid_format(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test endpoints with invalid UUID format"""
         app.dependency_overrides[get_current_user] = mock_current_user
 
@@ -382,23 +361,17 @@ class TestEventController:
         assert response.status_code == 422  # Validation error
 
     @pytest.mark.asyncio
-    async def test_join_event_invalid_data(
-        self, client: AsyncClient, test_event: Event
-    ):
+    async def test_join_event_invalid_data(self, client: AsyncClient, test_event: Event):
         """Test joining event with invalid data"""
         # Missing full_name
         join_data: dict[str, str] = {}
 
-        response = await client.post(
-            f"/api/events/{test_event.id}/join-url", json=join_data
-        )
+        response = await client.post(f"/api/events/{test_event.id}/join-url", json=join_data)
 
         assert response.status_code == 422  # Validation error
 
     @pytest.mark.asyncio
-    async def test_create_event_with_invalid_channel_name(
-        self, client: AsyncClient, test_user: User, mock_current_user
-    ):
+    async def test_create_event_with_invalid_channel_name(self, client: AsyncClient, test_user: User, mock_current_user):
         """Test creating event with invalid channel name"""
         app.dependency_overrides[get_current_user] = mock_current_user
 

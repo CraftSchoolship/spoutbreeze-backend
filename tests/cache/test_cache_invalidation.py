@@ -1,21 +1,22 @@
 import uuid
-import pytest
 from datetime import datetime
 
-from app.services.cached.user_service_cached import user_service_cached
-from app.services.cached.channels_service_cached import ChannelsServiceCached
-from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
-from app.services.cached.event_service_cached import EventServiceCached
-from app.models.user_models import User
-from app.models.channel.channels_model import Channel
-from app.models.stream_schemas import CreateRtmpEndpointCreate
-from app.models.event.event_schemas import EventCreate
+import pytest
+
 from app.config import redis_config
-from app.services.cached import user_service_cached as user_mod
-from app.services.cached import channels_service_cached as ch_mod
-from app.services.cached import rtmp_service_cached as rtmp_mod
-from app.services.cached import event_service_cached as event_mod
+from app.models.channel.channels_model import Channel
 from app.models.channel.channels_schemas import ChannelUpdate
+from app.models.event.event_schemas import EventCreate
+from app.models.stream_schemas import CreateRtmpEndpointCreate
+from app.models.user_models import User
+from app.services.cached import channels_service_cached as ch_mod
+from app.services.cached import event_service_cached as event_mod
+from app.services.cached import rtmp_service_cached as rtmp_mod
+from app.services.cached import user_service_cached as user_mod
+from app.services.cached.channels_service_cached import ChannelsServiceCached
+from app.services.cached.event_service_cached import EventServiceCached
+from app.services.cached.rtmp_service_cached import RtmpEndpointServiceCached
+from app.services.cached.user_service_cached import user_service_cached
 
 
 class FakeCacheInvalidate:
@@ -70,9 +71,7 @@ async def test_user_update_triggers_invalidation(fake_cache, db_session):
     assert got.id == u.id
 
     # Update profile
-    await user_service_cached.update_user_profile(
-        u.id, {"first_name": "NewName"}, db_session
-    )
+    await user_service_cached.update_user_profile(u.id, {"first_name": "NewName"}, db_session)
 
     # Check patterns collected
     assert any(p.startswith("user_profile:") for p in fake_cache.patterns)
@@ -83,9 +82,7 @@ async def test_user_update_triggers_invalidation(fake_cache, db_session):
 async def test_rtmp_create_triggers_invalidation(fake_cache, db_session, test_user):
     svc = RtmpEndpointServiceCached()
     await svc.create_rtmp_endpoints(
-        CreateRtmpEndpointCreate(
-            title="T1", stream_key="key1", rtmp_url="rtmp://example/live"
-        ),
+        CreateRtmpEndpointCreate(title="T1", stream_key="key1", rtmp_url="rtmp://example/live"),
         test_user.id,
         db_session,
     )

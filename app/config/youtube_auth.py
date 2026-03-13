@@ -1,8 +1,10 @@
-import httpx
 import secrets
 from urllib.parse import urlencode
-from app.config.settings import get_settings
+
+import httpx
+
 from app.config.logger_config import get_logger
+from app.config.settings import get_settings
 
 settings = get_settings()
 logger = get_logger("YouTubeAuth")
@@ -50,9 +52,7 @@ class YouTubeAuth:
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Token exchange failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Token exchange failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Token exchange error: {e}")
@@ -77,9 +77,7 @@ class YouTubeAuth:
                 logger.info("Access token refreshed successfully")
                 return token_data
         except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Token refresh failed: {e.response.status_code} - {e.response.text}"
-            )
+            logger.error(f"Token refresh failed: {e.response.status_code} - {e.response.text}")
             raise
         except Exception as e:
             logger.error(f"Token refresh error: {e}")

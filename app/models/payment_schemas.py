@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, UUID4
-from typing import Optional
 from datetime import datetime
+
+from pydantic import UUID4, BaseModel, Field
+
 from app.models.payment_models import (
     SubscriptionPlan,
 )
@@ -19,15 +20,15 @@ class SubscriptionResponse(BaseModel):
     id: UUID4
     user_id: UUID4
     stripe_customer_id: str
-    stripe_subscription_id: Optional[str] = None
+    stripe_subscription_id: str | None = None
     plan: str
     status: str
-    trial_start: Optional[datetime] = None
-    trial_end: Optional[datetime] = None
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
+    trial_start: datetime | None = None
+    trial_end: datetime | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
     cancel_at_period_end: bool = False
-    canceled_at: Optional[datetime] = None
+    canceled_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -37,8 +38,8 @@ class SubscriptionResponse(BaseModel):
 
 class PlanLimits(BaseModel):
     max_quality: str
-    max_concurrent_streams: Optional[int]
-    max_stream_duration_hours: Optional[int]
+    max_concurrent_streams: int | None
+    max_stream_duration_hours: int | None
     support_response_hours: int
     support_channels: list[str]
     chat_filter: bool
@@ -55,13 +56,13 @@ class TransactionResponse(BaseModel):
     id: UUID4
     subscription_id: UUID4
     stripe_payment_intent_id: str
-    stripe_invoice_id: Optional[str] = None
+    stripe_invoice_id: str | None = None
     amount: float
     currency: str
     transaction_type: str
     status: str
-    description: Optional[str] = None
-    receipt_url: Optional[str] = None
+    description: str | None = None
+    receipt_url: str | None = None
     created_at: datetime
 
     class Config:
@@ -71,9 +72,7 @@ class TransactionResponse(BaseModel):
 # Checkout schemas
 class CreateCheckoutSessionRequest(BaseModel):
     price_id: str = Field(..., description="Stripe Price ID for the plan")
-    success_url: str = Field(
-        ..., description="URL to redirect after successful payment"
-    )
+    success_url: str = Field(..., description="URL to redirect after successful payment")
     cancel_url: str = Field(..., description="URL to redirect after cancelled payment")
 
 
@@ -84,9 +83,7 @@ class CheckoutSessionResponse(BaseModel):
 
 # Portal schemas
 class CustomerPortalRequest(BaseModel):
-    return_url: str = Field(
-        ..., description="URL to return to after managing subscription"
-    )
+    return_url: str = Field(..., description="URL to return to after managing subscription")
 
 
 class CustomerPortalResponse(BaseModel):

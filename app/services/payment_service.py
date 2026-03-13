@@ -4,31 +4,32 @@ Handles all Stripe-related operations including subscription management,
 checkout sessions, customer portal, and webhook processing.
 """
 
-import stripe
-from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from fastapi import HTTPException, status
+from typing import Any
 
-from app.config.settings import get_settings
+import stripe
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.logger_config import get_logger
+from app.config.settings import get_settings
 from app.models.payment_models import (
+    PLAN_LIMITS,
     Subscription,
-    Transaction,
     SubscriptionPlan,
     SubscriptionStatus,
+    Transaction,
     TransactionType,
     WebhookEvent,
-    PLAN_LIMITS,
 )
-from app.models.user_models import User
 from app.models.payment_schemas import (
     CheckoutSessionResponse,
     CustomerPortalResponse,
     PlanInfo,
     PlanLimits,
 )
+from app.models.user_models import User
 
 logger = get_logger("PaymentService")
 settings = get_settings()
@@ -44,9 +45,7 @@ class PaymentService:
     async def get_or_create_customer(user: User, db: AsyncSession) -> str:
         """Get existing Stripe customer ID or create a new customer"""
         # Check if user already has a subscription with customer ID
-        result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
-        )
+        result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
         subscription = result.scalar_one_or_none()
 
         if subscription and subscription.stripe_customer_id:
@@ -64,7 +63,7 @@ class PaymentService:
             )
             logger.info(f"Created Stripe customer {customer.id} for user {user.id}")
             return customer.id
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create Stripe customer: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -85,14 +84,13 @@ class PaymentService:
             customer_id = await PaymentService.get_or_create_customer(user, db)
 
             # Check if user has an existing subscription
-            result = await db.execute(
-                select(Subscription).where(Subscription.user_id == user.id)
-            )
+            result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
             existing_subscription = result.scalar_one_or_none()
 
             # Validate price_id against configured plans
             valid_price_ids = {
-                pid for pid in [
+                pid
+                for pid in [
                     settings.stripe_free_price_id,
                     settings.stripe_pro_price_id,
                     settings.stripe_enterprise_price_id,
@@ -113,7 +111,7 @@ class PaymentService:
                 )
 
             # Create checkout session
-            checkout_params = {
+            checkout_params: dict[str, Any] = {
                 "customer": customer_id,
                 "line_items": [
                     {
@@ -141,13 +139,13 @@ class PaymentService:
             if price_id == settings.stripe_free_price_id:
                 checkout_params["subscription_data"]["trial_period_days"] = 14
 
-            session = stripe.checkout.Session.create(**checkout_params)
+            session = stripe.checkout.Session.create(**checkout_params)  # type: ignore[arg-type]
 
             logger.info(f"Created checkout session {session.id} for user {user.id}")
 
-            return CheckoutSessionResponse(session_id=session.id, url=session.url)
+            return CheckoutSessionResponse(session_id=session.id, url=session.url or "")
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create checkout session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -163,9 +161,7 @@ class PaymentService:
         """Create a Stripe customer portal session for subscription management"""
         try:
             # Get customer ID
-            result = await db.execute(
-                select(Subscription).where(Subscription.user_id == user.id)
-            )
+            result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
             subscription = result.scalar_one_or_none()
 
             if not subscription or not subscription.stripe_customer_id:
@@ -184,7 +180,7 @@ class PaymentService:
 
             return CustomerPortalResponse(url=session.url)
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to create portal session: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -192,28 +188,20 @@ class PaymentService:
             )
 
     @staticmethod
-    async def get_user_subscription(
-        user: User, db: AsyncSession
-    ) -> Optional[Subscription]:
+    async def get_user_subscription(user: User, db: AsyncSession) -> Subscription | None:
         """Get user's subscription"""
-        result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
-        )
+        result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def reconcile_subscription_from_stripe(
-        user: User, db: AsyncSession
-    ) -> Optional[Subscription]:
+    async def reconcile_subscription_from_stripe(user: User, db: AsyncSession) -> Subscription | None:
         """Reconcile local subscription with Stripe state for the user's customer.
 
         This updates the local DB if Stripe has a more recent/active subscription
         (useful when webhooks are delayed or misconfigured).
         """
         # Fetch existing local subscription (may be FREE/trialing)
-        result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
-        )
+        result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -228,14 +216,8 @@ class PaymentService:
 
         try:
             # Get latest non-canceled subscription for this customer
-            stripe_subs = stripe.Subscription.list(
-                customer=customer_id, status="all", limit=10
-            )
-            items = (
-                stripe_subs.get("data", [])
-                if isinstance(stripe_subs, dict)
-                else stripe_subs.data
-            )
+            stripe_subs = stripe.Subscription.list(customer=customer_id, status="all", limit=10)
+            items = stripe_subs.get("data", []) if isinstance(stripe_subs, dict) else stripe_subs.data
             candidates = [s for s in items if s.get("status") != "canceled"]
             if not candidates:
                 return subscription
@@ -300,7 +282,7 @@ class PaymentService:
                 logger.info(f"Reconciled subscription for user {user.id} from Stripe")
 
             return subscription
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Stripe error during reconcile: {str(e)}")
             return subscription
 
@@ -384,9 +366,7 @@ class PaymentService:
 
             # Always cancel at period end — no refund, access continues until expiry
             if subscription.stripe_subscription_id:
-                stripe.Subscription.modify(
-                    subscription.stripe_subscription_id, cancel_at_period_end=True
-                )
+                stripe.Subscription.modify(subscription.stripe_subscription_id, cancel_at_period_end=True)
                 subscription.cancel_at_period_end = True
 
             await db.commit()
@@ -395,7 +375,7 @@ class PaymentService:
             logger.info(f"Subscription for user {user.id} set to cancel at period end")
             return subscription
 
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to cancel subscription: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -406,15 +386,13 @@ class PaymentService:
     async def handle_webhook_event(
         event_id: str,
         event_type: str,
-        data: Dict[str, Any],
+        data: dict[str, Any],
         db: AsyncSession,
     ) -> None:
         """Handle Stripe webhook events"""
         try:
             # Deduplication: skip if already processed
-            existing = await db.execute(
-                select(WebhookEvent).where(WebhookEvent.stripe_event_id == event_id)
-            )
+            existing = await db.execute(select(WebhookEvent).where(WebhookEvent.stripe_event_id == event_id))
             if existing.scalar_one_or_none():
                 logger.info(f"Skipping duplicate webhook event: {event_id}")
                 return
@@ -449,9 +427,7 @@ class PaymentService:
             raise
 
     @staticmethod
-    async def _handle_checkout_completed(
-        data: Dict[str, Any], db: AsyncSession
-    ) -> None:
+    async def _handle_checkout_completed(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle checkout.session.completed event"""
         session = data.get("object", {})
         customer_id = session.get("customer")
@@ -465,9 +441,7 @@ class PaymentService:
         logger.info(f"Checkout completed for user {user_id}")
 
     @staticmethod
-    async def _handle_subscription_created(
-        data: Dict[str, Any], db: AsyncSession
-    ) -> None:
+    async def _handle_subscription_created(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle customer.subscription.created event"""
         stripe_subscription = data.get("object", {})
         customer_id = stripe_subscription.get("customer")
@@ -487,9 +461,7 @@ class PaymentService:
             return
 
         # Check if subscription already exists
-        result = await db.execute(
-            select(Subscription).where(Subscription.user_id == user.id)
-        )
+        result = await db.execute(select(Subscription).where(Subscription.user_id == user.id))
         subscription = result.scalar_one_or_none()
 
         # Get price and product info
@@ -506,21 +478,13 @@ class PaymentService:
             subscription.stripe_product_id = product_id
             subscription.plan = plan
             subscription.status = stripe_subscription.get("status")
-            subscription.current_period_start = datetime.fromtimestamp(
-                stripe_subscription.get("current_period_start")
-            )
-            subscription.current_period_end = datetime.fromtimestamp(
-                stripe_subscription.get("current_period_end")
-            )
+            subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.get("current_period_start"))
+            subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.get("current_period_end"))
 
             if stripe_subscription.get("trial_start"):
-                subscription.trial_start = datetime.fromtimestamp(
-                    stripe_subscription.get("trial_start")
-                )
+                subscription.trial_start = datetime.fromtimestamp(stripe_subscription.get("trial_start"))
             if stripe_subscription.get("trial_end"):
-                subscription.trial_end = datetime.fromtimestamp(
-                    stripe_subscription.get("trial_end")
-                )
+                subscription.trial_end = datetime.fromtimestamp(stripe_subscription.get("trial_end"))
         else:
             # Create new subscription
             subscription = Subscription(
@@ -531,22 +495,14 @@ class PaymentService:
                 stripe_product_id=product_id,
                 plan=plan,
                 status=stripe_subscription.get("status"),
-                current_period_start=datetime.fromtimestamp(
-                    stripe_subscription.get("current_period_start")
-                ),
-                current_period_end=datetime.fromtimestamp(
-                    stripe_subscription.get("current_period_end")
-                ),
+                current_period_start=datetime.fromtimestamp(stripe_subscription.get("current_period_start")),
+                current_period_end=datetime.fromtimestamp(stripe_subscription.get("current_period_end")),
             )
 
             if stripe_subscription.get("trial_start"):
-                subscription.trial_start = datetime.fromtimestamp(
-                    stripe_subscription.get("trial_start")
-                )
+                subscription.trial_start = datetime.fromtimestamp(stripe_subscription.get("trial_start"))
             if stripe_subscription.get("trial_end"):
-                subscription.trial_end = datetime.fromtimestamp(
-                    stripe_subscription.get("trial_end")
-                )
+                subscription.trial_end = datetime.fromtimestamp(stripe_subscription.get("trial_end"))
 
             db.add(subscription)
 
@@ -554,19 +510,13 @@ class PaymentService:
         logger.info(f"Subscription created/updated for user {user_id}")
 
     @staticmethod
-    async def _handle_subscription_updated(
-        data: Dict[str, Any], db: AsyncSession
-    ) -> None:
+    async def _handle_subscription_updated(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle customer.subscription.updated event"""
         stripe_subscription = data.get("object", {})
         subscription_id = stripe_subscription.get("id")
 
         # Find subscription
-        result = await db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == subscription_id
-            )
-        )
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == subscription_id))
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -575,20 +525,12 @@ class PaymentService:
 
         # Update subscription
         subscription.status = stripe_subscription.get("status")
-        subscription.current_period_start = datetime.fromtimestamp(
-            stripe_subscription.get("current_period_start")
-        )
-        subscription.current_period_end = datetime.fromtimestamp(
-            stripe_subscription.get("current_period_end")
-        )
-        subscription.cancel_at_period_end = stripe_subscription.get(
-            "cancel_at_period_end", False
-        )
+        subscription.current_period_start = datetime.fromtimestamp(stripe_subscription.get("current_period_start"))
+        subscription.current_period_end = datetime.fromtimestamp(stripe_subscription.get("current_period_end"))
+        subscription.cancel_at_period_end = stripe_subscription.get("cancel_at_period_end", False)
 
         if stripe_subscription.get("canceled_at"):
-            subscription.canceled_at = datetime.fromtimestamp(
-                stripe_subscription.get("canceled_at")
-            )
+            subscription.canceled_at = datetime.fromtimestamp(stripe_subscription.get("canceled_at"))
 
         # Update price if changed
         price_id = stripe_subscription["items"]["data"][0]["price"]["id"]
@@ -600,19 +542,13 @@ class PaymentService:
         logger.info(f"Subscription {subscription_id} updated")
 
     @staticmethod
-    async def _handle_subscription_deleted(
-        data: Dict[str, Any], db: AsyncSession
-    ) -> None:
+    async def _handle_subscription_deleted(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle customer.subscription.deleted event"""
         stripe_subscription = data.get("object", {})
         subscription_id = stripe_subscription.get("id")
 
         # Find subscription
-        result = await db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == subscription_id
-            )
-        )
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == subscription_id))
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -627,7 +563,7 @@ class PaymentService:
         logger.info(f"Subscription {subscription_id} deleted")
 
     @staticmethod
-    async def _handle_payment_succeeded(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_payment_succeeded(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle invoice.payment_succeeded event"""
         invoice = data.get("object", {})
         subscription_id = invoice.get("subscription")
@@ -638,11 +574,7 @@ class PaymentService:
             return
 
         # Find subscription
-        result = await db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == subscription_id
-            )
-        )
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == subscription_id))
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -667,7 +599,7 @@ class PaymentService:
         logger.info(f"Payment succeeded for subscription {subscription_id}")
 
     @staticmethod
-    async def _handle_payment_failed(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_payment_failed(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle invoice.payment_failed event"""
         invoice = data.get("object", {})
         subscription_id = invoice.get("subscription")
@@ -678,11 +610,7 @@ class PaymentService:
             return
 
         # Find subscription
-        result = await db.execute(
-            select(Subscription).where(
-                Subscription.stripe_subscription_id == subscription_id
-            )
-        )
+        result = await db.execute(select(Subscription).where(Subscription.stripe_subscription_id == subscription_id))
         subscription = result.scalar_one_or_none()
 
         if not subscription:
@@ -709,7 +637,7 @@ class PaymentService:
         logger.warning(f"Payment failed for subscription {subscription_id}")
 
     @staticmethod
-    async def _handle_charge_refunded(data: Dict[str, Any], db: AsyncSession) -> None:
+    async def _handle_charge_refunded(data: dict[str, Any], db: AsyncSession) -> None:
         """Handle charge.refunded event"""
         charge = data.get("object", {})
         payment_intent_id = charge.get("payment_intent")
@@ -719,11 +647,7 @@ class PaymentService:
             return
 
         # Find the related transaction
-        result = await db.execute(
-            select(Transaction).where(
-                Transaction.stripe_payment_intent_id == payment_intent_id
-            )
-        )
+        result = await db.execute(select(Transaction).where(Transaction.stripe_payment_intent_id == payment_intent_id))
         original_transaction = result.scalar_one_or_none()
 
         if not original_transaction:
@@ -758,7 +682,7 @@ class PaymentService:
             return SubscriptionPlan.FREE.value
 
     @staticmethod
-    async def get_available_plans() -> List[PlanInfo]:
+    async def get_available_plans() -> list[PlanInfo]:
         """Get list of available subscription plans with their details"""
         plans = []
 
@@ -875,9 +799,7 @@ class PaymentService:
         }
 
     @staticmethod
-    async def sync_transactions_from_stripe(
-        subscription: Subscription, db: AsyncSession
-    ) -> list[Transaction]:
+    async def sync_transactions_from_stripe(subscription: Subscription, db: AsyncSession) -> list[Transaction]:
         """
         Fetch paid invoices from Stripe for this subscription's customer and
         upsert them into the local transactions table.  This ensures payment
@@ -892,28 +814,20 @@ class PaymentService:
                 customer=subscription.stripe_customer_id,
                 limit=100,
             )
-        except stripe.error.StripeError as e:
+        except stripe.StripeError as e:
             logger.error(f"Failed to list Stripe invoices: {e}")
             return []
 
-        items = (
-            stripe_invoices.get("data", [])
-            if isinstance(stripe_invoices, dict)
-            else stripe_invoices.data
-        )
+        items = stripe_invoices.get("data", []) if isinstance(stripe_invoices, dict) else stripe_invoices.data
 
         if not items:
             return []
 
         # Fetch existing payment_intent IDs so we don't duplicate
         existing_result = await db.execute(
-            select(Transaction.stripe_payment_intent_id).where(
-                Transaction.subscription_id == subscription.id
-            )
+            select(Transaction.stripe_payment_intent_id).where(Transaction.subscription_id == subscription.id)
         )
-        existing_pi_ids: set[str] = {
-            row[0] for row in existing_result.all() if row[0]
-        }
+        existing_pi_ids: set[str] = {row[0] for row in existing_result.all() if row[0]}
 
         new_transactions: list[Transaction] = []
 
@@ -944,11 +858,7 @@ class PaymentService:
             # Determine plan from the invoice line items
             description = f"Payment for {subscription.plan} plan"
             lines = inv.get("lines", {})
-            line_data = (
-                lines.get("data", [])
-                if isinstance(lines, dict)
-                else lines.data if hasattr(lines, "data") else []
-            )
+            line_data = lines.get("data", []) if isinstance(lines, dict) else lines.data if hasattr(lines, "data") else []
             if line_data:
                 first_line = line_data[0]
                 line_desc = first_line.get("description", "")
@@ -974,8 +884,7 @@ class PaymentService:
         if new_transactions:
             await db.commit()
             logger.info(
-                f"Synced {len(new_transactions)} transactions from Stripe "
-                f"for customer {subscription.stripe_customer_id}"
+                f"Synced {len(new_transactions)} transactions from Stripe for customer {subscription.stripe_customer_id}"
             )
 
         return new_transactions

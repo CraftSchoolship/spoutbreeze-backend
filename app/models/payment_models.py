@@ -1,13 +1,14 @@
 from __future__ import annotations
+
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING, Optional
 from enum import Enum
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import String, DateTime, Boolean, Float, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey
+
 from app.config.database.session import Base
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ class SubscriptionStatus(str, Enum):
     UNPAID = "unpaid"
 
 
-PLAN_LIMITS = {
+PLAN_LIMITS: dict[str, dict[str, Any]] = {
     "unlimited": {
         "max_quality": "4K",
         "max_concurrent_streams": None,
@@ -101,52 +102,34 @@ class Subscription(Base):
     )
 
     # Stripe references
-    stripe_customer_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
-    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
-        String, nullable=True, unique=True, index=True
-    )
-    stripe_price_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
-    stripe_product_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stripe_customer_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String, nullable=True, unique=True, index=True)
+    stripe_price_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    stripe_product_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Subscription details
-    plan: Mapped[str] = mapped_column(
-        String, default=SubscriptionPlan.FREE.value, nullable=False
-    )
-    status: Mapped[str] = mapped_column(
-        String, default=SubscriptionStatus.TRIALING.value, nullable=False
-    )
+    plan: Mapped[str] = mapped_column(String, default=SubscriptionPlan.FREE.value, nullable=False)
+    status: Mapped[str] = mapped_column(String, default=SubscriptionStatus.TRIALING.value, nullable=False)
 
     # Trial information
-    trial_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    trial_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    trial_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    trial_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Subscription period
-    current_period_start: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
-    )
-    current_period_end: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, nullable=True
-    )
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Cancellation
-    cancel_at_period_end: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )
-    canceled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="subscription")
-    transactions: Mapped[list["Transaction"]] = relationship(
+    user: Mapped[User] = relationship("User", back_populates="subscription")
+    transactions: Mapped[list[Transaction]] = relationship(
         "Transaction", back_populates="subscription", cascade="all, delete-orphan"
     )
 
@@ -161,7 +144,7 @@ class Subscription(Base):
         """Check if subscription is in trial period"""
         return self.status == SubscriptionStatus.TRIALING.value
 
-    def get_plan_limits(self) -> dict:
+    def get_plan_limits(self) -> dict[str, Any]:
         """Get plan limits based on current plan"""
         if self.user.unlimited_access:
             return PLAN_LIMITS["unlimited"].copy()
@@ -198,10 +181,8 @@ class Transaction(Base):
     )
 
     # Stripe references
-    stripe_payment_intent_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
-    stripe_invoice_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    stripe_payment_intent_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    stripe_invoice_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Transaction details
     amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -210,18 +191,14 @@ class Transaction(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
 
     # Additional info
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    receipt_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    receipt_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    subscription: Mapped["Subscription"] = relationship(
-        "Subscription", back_populates="transactions"
-    )
+    subscription: Mapped[Subscription] = relationship("Subscription", back_populates="transactions")
 
 
 class WebhookEvent(Base):
@@ -235,10 +212,6 @@ class WebhookEvent(Base):
         default=uuid.uuid4,
         nullable=False,
     )
-    stripe_event_id: Mapped[str] = mapped_column(
-        String, nullable=False, unique=True, index=True
-    )
+    stripe_event_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-    processed_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

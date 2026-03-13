@@ -1,5 +1,5 @@
 import pytest
-from requests.exceptions import HTTPError, Timeout, RequestException
+from requests.exceptions import HTTPError, RequestException, Timeout
 
 import app.services.auth_service as auth_module
 from app.services.auth_service import AuthService
@@ -343,17 +343,13 @@ def test_update_user_role_happy_path(monkeypatch, make_service):
     called = {"removed": None, "assigned": None}
     monkeypatch.setattr(svc, "_get_admin_token", lambda: "ADM")
     monkeypatch.setattr(svc, "_get_client_id", lambda adm, name: "cid-1")
-    monkeypatch.setattr(
-        svc, "_get_user_client_roles", lambda adm, uid, cid: [{"name": "old"}]
-    )
+    monkeypatch.setattr(svc, "_get_user_client_roles", lambda adm, uid, cid: [{"name": "old"}])
 
     def fake_remove(adm, uid, cid, roles):
         called["removed"] = roles
 
     monkeypatch.setattr(svc, "_remove_user_client_roles", fake_remove)
-    monkeypatch.setattr(
-        svc, "_get_client_role", lambda adm, cid, role: {"id": "rid", "name": role}
-    )
+    monkeypatch.setattr(svc, "_get_client_role", lambda adm, cid, role: {"id": "rid", "name": role})
 
     def fake_assign(adm, uid, cid, role):
         called["assigned"] = role["name"]
@@ -366,9 +362,7 @@ def test_update_user_role_happy_path(monkeypatch, make_service):
 
 def test_update_user_role_failure_wrapped(monkeypatch, make_service):
     svc, _ = make_service()
-    monkeypatch.setattr(
-        svc, "_get_admin_token", lambda: (_ for _ in ()).throw(Exception("fail"))
-    )
+    monkeypatch.setattr(svc, "_get_admin_token", lambda: (_ for _ in ()).throw(Exception("fail")))
     with pytest.raises(auth_module.HTTPException) as ei:
         svc.update_user_role("uid", "role")
     assert ei.value.status_code == 500

@@ -1,12 +1,14 @@
 # Create a new file: app/controllers/health_controller.py
-from fastapi import APIRouter, status, Response, Depends
-from app.services.auth_service import AuthService
+from datetime import datetime
+from typing import Any
+
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config.database.session import get_db
 from app.config.redis_config import cache
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-from typing import Dict, Any
-from datetime import datetime
+from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/api", tags=["Health"])
 
@@ -43,7 +45,7 @@ auth_service = AuthService()
 
 
 @router.get("/health")
-async def health_check(response: Response) -> Dict[str, str]:
+async def health_check(response: Response) -> dict[str, str]:
     """
     Simple health check endpoint that verifies Keycloak connectivity
     """
@@ -58,7 +60,7 @@ async def health_check(response: Response) -> Dict[str, str]:
 
 
 @router.get("/health/ready")
-async def readiness_check() -> Dict[str, Any]:
+async def readiness_check() -> dict[str, Any]:
     """
     Readiness check - determines if the application is ready to serve traffic
     """
@@ -71,7 +73,7 @@ async def readiness_check() -> Dict[str, Any]:
 
 
 @router.get("/health/live")
-async def liveness_check() -> Dict[str, str]:
+async def liveness_check() -> dict[str, str]:
     """
     Liveness check - determines if the application is alive
     """
@@ -79,9 +81,7 @@ async def liveness_check() -> Dict[str, str]:
 
 
 @router.get("/health/database")
-async def database_health_check(
-    response: Response, db: AsyncSession = Depends(get_db)
-) -> Dict[str, Any]:
+async def database_health_check(response: Response, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
     Database-specific health check endpoint
     """
@@ -102,7 +102,7 @@ async def database_health_check(
 
 
 @router.get("/health/cache")
-async def cache_health_check(response: Response) -> Dict[str, Any]:
+async def cache_health_check(response: Response) -> dict[str, Any]:
     """
     Cache-specific health check endpoint
     """

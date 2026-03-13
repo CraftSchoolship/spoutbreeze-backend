@@ -1,24 +1,23 @@
-from typing import List, Dict, Any, Optional
-from uuid import UUID
+import secrets
 from datetime import datetime
+from typing import Any
+from uuid import UUID
 
-from app.models.bbb_schemas import JoinMeetingRequest
-from app.models.user_models import User
-from app.models.event.event_models import Event, EventStatus
-from app.models.event.event_schemas import EventCreate, EventUpdate, EventResponse
-from app.models.channel.channels_schemas import ChannelCreate, ChannelResponse
-from app.services.channels_service import ChannelsService
-from app.services.bbb_service import BBBService
-from app.utils.event_helpers import EventHelpers
-
-
+from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, delete, or_
 from sqlalchemy.orm import selectinload
+
 from app.config.logger_config import logger
 from app.config.settings import get_settings
-import secrets
 from app.models.base import user_event_association
+from app.models.bbb_schemas import JoinMeetingRequest
+from app.models.channel.channels_schemas import ChannelCreate, ChannelResponse
+from app.models.event.event_models import Event, EventStatus
+from app.models.event.event_schemas import EventCreate, EventResponse, EventUpdate
+from app.models.user_models import User
+from app.services.bbb_service import BBBService
+from app.services.channels_service import ChannelsService
+from app.utils.event_helpers import EventHelpers
 
 
 class EventService:
@@ -89,9 +88,7 @@ class EventService:
         """
         try:
             # Check if event title already exists
-            existing_event_result = await db.execute(
-                select(Event).where(Event.title == event.title)
-            )
+            existing_event_result = await db.execute(select(Event).where(Event.title == event.title))
             existing_event = existing_event_result.scalars().first()
             if existing_event:
                 raise ValueError(f"Event with title '{event.title}' already exists.")
@@ -114,9 +111,7 @@ class EventService:
             if hasattr(event, "organizer_ids") and event.organizer_ids:
                 for organizer_id in event.organizer_ids:
                     # Check if the user exists
-                    result = await db.execute(
-                        select(User).where(User.id == organizer_id)
-                    )
+                    result = await db.execute(select(User).where(User.id == organizer_id))
                     organizer = result.scalars().first()
                     if not organizer:
                         raise ValueError(f"User with ID {organizer_id} does not exist.")
@@ -146,9 +141,7 @@ class EventService:
             if organizers:
                 # Load the event with the organizers relationship
                 result = await db.execute(
-                    select(Event)
-                    .options(selectinload(Event.organizers))
-                    .where(Event.id == new_event.id)
+                    select(Event).options(selectinload(Event.organizers)).where(Event.id == new_event.id)
                 )
                 event_with_organizers = result.scalars().first()
                 if event_with_organizers:
@@ -170,9 +163,7 @@ class EventService:
             if not refreshed_event:
                 raise ValueError("Failed to retrieve created event")
 
-            logger.info(
-                f"Event {refreshed_event.title} created for user {user_id} in channel {channel.name}"
-            )
+            logger.info(f"Event {refreshed_event.title} created for user {user_id} in channel {channel.name}")
 
             logger.info(f"User with ID {user_id} created event {refreshed_event.title}")
 
@@ -188,7 +179,7 @@ class EventService:
         db: AsyncSession,
         event_id: UUID,
         user_id: UUID,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         Start an event by ID.
         """
@@ -206,9 +197,7 @@ class EventService:
             result = await db.execute(select_stmt)
             event = result.scalars().first()
             if not event:
-                raise ValueError(
-                    f"Event with ID {event_id} does not exist or does not belong to user {user_id}."
-                )
+                raise ValueError(f"Event with ID {event_id} does not exist or does not belong to user {user_id}.")
 
             if not event.meeting_created:
                 # Create the meeting in BBB
@@ -246,9 +235,7 @@ class EventService:
                 )
 
             if not event.meeting_id or not event.moderator_pw:
-                raise ValueError(
-                    f"Event with ID {event_id} does not have a valid meeting ID or moderator password."
-                )
+                raise ValueError(f"Event with ID {event_id} does not have a valid meeting ID or moderator password.")
 
             join_request = JoinMeetingRequest(
                 meeting_id=event.meeting_id,
@@ -268,24 +255,20 @@ class EventService:
         db: AsyncSession,
         event_id: UUID,
         user_id: UUID,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         """
         End an event by ID.
         """
         try:
             # Get the event
             select_stmt = (
-                select(Event)
-                .options(selectinload(Event.creator))
-                .where(Event.id == event_id, Event.creator_id == user_id)
+                select(Event).options(selectinload(Event.creator)).where(Event.id == event_id, Event.creator_id == user_id)
             )
             result = await db.execute(select_stmt)
             event = result.scalars().first()
 
             if not event:
-                raise ValueError(
-                    f"Event with ID {event_id} does not exist or you don't have permission."
-                )
+                raise ValueError(f"Event with ID {event_id} does not exist or you don't have permission.")
 
             if event.status != EventStatus.LIVE:
                 raise ValueError("Event is not currently live.")
@@ -294,9 +277,7 @@ class EventService:
             if event.meeting_id and event.moderator_pw:
                 from app.models.bbb_schemas import EndMeetingRequest
 
-                end_request = EndMeetingRequest(
-                    meeting_id=event.meeting_id, password=event.moderator_pw
-                )
+                end_request = EndMeetingRequest(meeting_id=event.meeting_id, password=event.moderator_pw)
                 await self.bbb_service.end_meeting(request=end_request, db=db)
 
             # Update event status
@@ -317,8 +298,8 @@ class EventService:
         self,
         db: AsyncSession,
         status: EventStatus,
-        user_id: Optional[UUID] = None,
-    ) -> List[EventResponse]:
+        user_id: UUID | None = None,
+    ) -> list[EventResponse]:
         """
         Get events by status, optionally filtered by user.
         """
@@ -356,30 +337,22 @@ class EventService:
 
             event_responses = [self._create_event_response(event) for event in events]
 
-            logger.info(
-                f"Retrieved {len(event_responses)} events with status {status.value}"
-            )
+            logger.info(f"Retrieved {len(event_responses)} events with status {status.value}")
             return event_responses
 
         except Exception as e:
             logger.error(f"Error retrieving events with status {status.value}: {e}")
             raise
 
-    async def get_upcoming_events(
-        self, db: AsyncSession, user_id: Optional[UUID] = None
-    ) -> List[EventResponse]:
+    async def get_upcoming_events(self, db: AsyncSession, user_id: UUID | None = None) -> list[EventResponse]:
         """Get upcoming events (scheduled status)."""
         return await self.get_events_by_status(db, EventStatus.SCHEDULED, user_id)
 
-    async def get_past_events(
-        self, db: AsyncSession, user_id: Optional[UUID] = None
-    ) -> List[EventResponse]:
+    async def get_past_events(self, db: AsyncSession, user_id: UUID | None = None) -> list[EventResponse]:
         """Get past events (ended status)."""
         return await self.get_events_by_status(db, EventStatus.ENDED, user_id)
 
-    async def get_live_events(
-        self, db: AsyncSession, user_id: Optional[UUID] = None
-    ) -> List[EventResponse]:
+    async def get_live_events(self, db: AsyncSession, user_id: UUID | None = None) -> list[EventResponse]:
         """Get currently live events."""
         return await self.get_events_by_status(db, EventStatus.LIVE, user_id)
 
@@ -387,9 +360,9 @@ class EventService:
         self,
         db: AsyncSession,
         event_id: UUID,
-        user_id: Optional[UUID] = None,
-        full_name: Optional[str] = None,
-    ) -> Dict[str, str]:
+        user_id: UUID | None = None,
+        full_name: str | None = None,
+    ) -> dict[str, str]:
         """
         Join an event by ID.
         """
@@ -410,9 +383,7 @@ class EventService:
                 raise ValueError(f"Event with ID {event_id} does not exist.")
 
             if not event.meeting_id or not event.attendee_pw or not event.moderator_pw:
-                raise ValueError(
-                    f"Event with ID {event_id} does not have a valid meeting ID or passwords."
-                )
+                raise ValueError(f"Event with ID {event_id} does not have a valid meeting ID or passwords.")
 
             attendee_join_request = JoinMeetingRequest(
                 meeting_id=event.meeting_id,
@@ -425,12 +396,8 @@ class EventService:
                 full_name=full_name,
             )
 
-            attendee_join_url = self.bbb_service.get_join_url(
-                request=attendee_join_request
-            )
-            moderator_join_url = self.bbb_service.get_join_url(
-                request=moderator_join_request
-            )
+            attendee_join_url = self.bbb_service.get_join_url(request=attendee_join_request)
+            moderator_join_url = self.bbb_service.get_join_url(request=moderator_join_request)
             return {
                 "attendee_join_url": attendee_join_url,
                 "moderator_join_url": moderator_join_url,
@@ -471,7 +438,7 @@ class EventService:
     async def get_all_events(
         self,
         db: AsyncSession,
-    ) -> List[EventResponse]:
+    ) -> list[EventResponse]:
         """
         Get all events.
         """
@@ -500,7 +467,7 @@ class EventService:
         self,
         db: AsyncSession,
         channel_id: UUID,
-    ) -> List[EventResponse]:
+    ) -> list[EventResponse]:
         """
         Get events by channel ID.
         """
@@ -533,9 +500,7 @@ class EventService:
 
             event_responses = [self._create_event_response(event) for event in events]
 
-            logger.info(
-                f"Retrieved {len(event_responses)} events for channel ID {channel_id}"
-            )
+            logger.info(f"Retrieved {len(event_responses)} events for channel ID {channel_id}")
             return event_responses
         except Exception as e:
             logger.error(f"Error retrieving events for channel ID {channel_id}: {e}")
@@ -564,24 +529,18 @@ class EventService:
         result = await db.execute(select_stmt)
         event = result.scalars().first()
         if not event:
-            raise ValueError(
-                f"Event with ID {event_id} does not exist or does not belong to user {user_id}."
-            )
+            raise ValueError(f"Event with ID {event_id} does not exist or does not belong to user {user_id}.")
 
         # Update the event
         try:
             # Handle basic fields
             update_data = {}
             for field, value in event_update.model_dump().items():
-                if (
-                    value is not None and field != "organizer_ids"
-                ):  # Skip organizer_ids for direct update
+                if value is not None and field != "organizer_ids":  # Skip organizer_ids for direct update
                     update_data[field] = value
 
             if update_data:  # Only update if there are fields to update
-                update_stmt = (
-                    update(Event).where(Event.id == event_id).values(**update_data)
-                )
+                update_stmt = update(Event).where(Event.id == event_id).values(**update_data)
                 await db.execute(update_stmt)
 
             # Handle organizers separately if provided
@@ -592,16 +551,12 @@ class EventService:
                 # Add new organizers
                 for organizer_id in event_update.organizer_ids:
                     # Verify user exists
-                    organizer_result = await db.execute(
-                        select(User).where(User.id == organizer_id)
-                    )
+                    organizer_result = await db.execute(select(User).where(User.id == organizer_id))
                     organizer = organizer_result.scalars().first()
                     if organizer:
                         event.organizers.append(organizer)
                     else:
-                        logger.warning(
-                            f"User with ID {organizer_id} not found when updating event organizers"
-                        )
+                        logger.warning(f"User with ID {organizer_id} not found when updating event organizers")
 
             await db.commit()
             await db.refresh(event)
@@ -622,15 +577,11 @@ class EventService:
         """
         try:
             # Check if the event exists and belongs to the user
-            select_stmt = select(Event).where(
-                Event.id == event_id, Event.creator_id == user_id
-            )
+            select_stmt = select(Event).where(Event.id == event_id, Event.creator_id == user_id)
             result = await db.execute(select_stmt)
             event = result.scalars().first()
             if not event:
-                raise ValueError(
-                    f"Event with ID {event_id} does not exist or does not belong to user {user_id}."
-                )
+                raise ValueError(f"Event with ID {event_id} does not exist or does not belong to user {user_id}.")
 
             # Delete the event
             delete_stmt = delete(Event).where(Event.id == event_id)
@@ -653,14 +604,10 @@ class EventService:
         """
         Get or create a channel.
         """
-        channel = await self.channel_service.get_channel_by_name(
-            db=db, channel_name=channel_name, user_id=user_id
-        )
+        channel = await self.channel_service.get_channel_by_name(db=db, channel_name=channel_name, user_id=user_id)
         if not channel:
             channel_create = ChannelCreate(name=channel_name)
-            channel = await self.channel_service.create_channel(
-                db=db, channel_create=channel_create, user_id=user_id
-            )
+            channel = await self.channel_service.create_channel(db=db, channel_create=channel_create, user_id=user_id)
         return channel
 
     async def _create_bbb_meeting(
@@ -669,7 +616,7 @@ class EventService:
         event: EventCreate,
         new_event: Event,
         user_id: UUID,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a BBB meeting for the event.
         """

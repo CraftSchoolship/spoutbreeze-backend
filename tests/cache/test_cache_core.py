@@ -1,5 +1,6 @@
 import asyncio
 import time
+
 import pytest
 
 from app.config import redis_config
