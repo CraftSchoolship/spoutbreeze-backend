@@ -100,6 +100,7 @@ async def get_all_rtmp_endpoints(
 async def get_rtmp_endpoints_by_id(
     rtmp_endpoints_id: UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> RtmpEndpointResponse:
     """
     Get stream settings by ID.
@@ -114,6 +115,7 @@ async def get_rtmp_endpoints_by_id(
     try:
         rtmp_endpoints = await rtmp_service.get_rtmp_endpoints_by_id(
             rtmp_endpoints_id=rtmp_endpoints_id,
+            user_id=UUID(str(current_user.id)),
             db=db,
         )
         if not rtmp_endpoints:
@@ -131,6 +133,7 @@ async def update_rtmp_endpoints(
     rtmp_endpoints_id: UUID,
     rtmp_endpoints_update: RtmpEndpointUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> RtmpEndpointResponse:
     """
     Update stream settings by ID.
@@ -146,6 +149,7 @@ async def update_rtmp_endpoints(
     try:
         updated_rtmp_endpoints = await rtmp_service.update_rtmp_endpoints(
             rtmp_endpoints_id=rtmp_endpoints_id,
+            user_id=UUID(str(current_user.id)),
             rtmp_endpoints_update=rtmp_endpoints_update,
             db=db,
         )

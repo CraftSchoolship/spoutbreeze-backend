@@ -107,6 +107,7 @@ async def test_update_rtmp_endpoints_commit_failure_triggers_rollback(db_session
     with pytest.raises(RuntimeError):
         await svc.update_rtmp_endpoints(
             created.id,
+            test_user.id,
             RtmpEndpointUpdate(title="NewTitle"),
             db_session,
         )
@@ -171,6 +172,7 @@ async def test_get_rtmp_endpoints_by_user_id_execute_failure(db_session, test_us
 @pytest.mark.anyio
 async def test_get_rtmp_endpoints_by_id_execute_failure(db_session, monkeypatch):
     svc = RtmpEndpointService()
+    user_id = uuid.uuid4()
 
     async def failing_execute(*a, **k):
         raise RuntimeError("exec fail id")
@@ -178,4 +180,4 @@ async def test_get_rtmp_endpoints_by_id_execute_failure(db_session, monkeypatch)
     monkeypatch.setattr(db_session, "execute", failing_execute)
 
     with pytest.raises(RuntimeError):
-        await svc.get_rtmp_endpoints_by_id(uuid.uuid4(), db_session)
+        await svc.get_rtmp_endpoints_by_id(uuid.uuid4(), user_id, db_session)

@@ -130,6 +130,7 @@ class RtmpEndpointService:
     async def get_rtmp_endpoints_by_id(
         self,
         rtmp_endpoints_id: UUID,
+        user_id: UUID,
         db: AsyncSession,
     ) -> RtmpEndpointResponse | None:
         """
@@ -139,24 +140,28 @@ class RtmpEndpointService:
             result = await db.execute(
                 select(RtmpEndpoint, User)
                 .join(User, RtmpEndpoint.user_id == User.id)
-                .where(RtmpEndpoint.id == rtmp_endpoints_id)
+                .where(
+                    RtmpEndpoint.id == rtmp_endpoints_id,
+                    RtmpEndpoint.user_id == user_id,
+                )
             )
             rtmp_endpoints_user_pair = result.first()
 
             if rtmp_endpoints_user_pair:
                 rtmp_endpoints, user = rtmp_endpoints_user_pair
-                logger.info(f"Stream settings retrieved with ID {rtmp_endpoints_id}")
+                logger.info(f"Stream settings retrieved with ID {rtmp_endpoints_id} for user {user_id}")
                 return self._create_rtmp_endpoints_response(rtmp_endpoints, user)
             else:
-                logger.warning(f"Stream settings with ID {rtmp_endpoints_id} not found")
+                logger.warning(f"Stream settings with ID {rtmp_endpoints_id} not found for user {user_id}")
                 return None
         except Exception as e:
-            logger.error(f"Error retrieving stream settings with ID {rtmp_endpoints_id}: {e}")
+            logger.error(f"Error retrieving stream settings with ID {rtmp_endpoints_id} for user {user_id}: {e}")
             raise
 
     async def update_rtmp_endpoints(
         self,
         rtmp_endpoints_id: UUID,
+        user_id: UUID,
         rtmp_endpoints_update: RtmpEndpointUpdate,
         db: AsyncSession,
     ) -> RtmpEndpointResponse | None:
@@ -168,12 +173,15 @@ class RtmpEndpointService:
             result = await db.execute(
                 select(RtmpEndpoint, User)
                 .join(User, RtmpEndpoint.user_id == User.id)
-                .where(RtmpEndpoint.id == rtmp_endpoints_id)
+                .where(
+                    RtmpEndpoint.id == rtmp_endpoints_id,
+                    RtmpEndpoint.user_id == user_id,
+                )
             )
             rtmp_endpoints_user_pair = result.first()
 
             if not rtmp_endpoints_user_pair:
-                logger.warning(f"Stream settings with ID {rtmp_endpoints_id} not found")
+                logger.warning(f"Stream settings with ID {rtmp_endpoints_id} not found for user {user_id}")
                 return None
 
             rtmp_endpoints, user = rtmp_endpoints_user_pair
@@ -190,7 +198,7 @@ class RtmpEndpointService:
             logger.info(f"Stream settings with ID {rtmp_endpoints_id} updated for user {rtmp_endpoints.user_id}")
             return self._create_rtmp_endpoints_response(rtmp_endpoints, user)
         except Exception as e:
-            logger.error(f"Error updating stream settings with ID {rtmp_endpoints_id}: {e}")
+            logger.error(f"Error updating stream settings with ID {rtmp_endpoints_id} for user {user_id}: {e}")
             await db.rollback()
             raise
 
