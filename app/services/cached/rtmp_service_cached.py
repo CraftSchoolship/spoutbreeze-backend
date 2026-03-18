@@ -28,8 +28,13 @@ class RtmpEndpointServiceCached(RtmpEndpointService):
         return await super().get_rtmp_endpoints_by_user_id(user_id, db)
 
     @cached_db(ttl=settings.cache_ttl_long, key_prefix="rtmp_by_id")  # 1 hour
-    async def get_rtmp_endpoints_by_id(self, rtmp_endpoints_id: UUID, db: AsyncSession) -> RtmpEndpointResponse | None:
-        return await super().get_rtmp_endpoints_by_id(rtmp_endpoints_id, db)
+    async def get_rtmp_endpoints_by_id(
+        self,
+        rtmp_endpoints_id: UUID,
+        user_id: UUID,
+        db: AsyncSession,
+    ) -> RtmpEndpointResponse | None:
+        return await super().get_rtmp_endpoints_by_id(rtmp_endpoints_id, user_id, db)
 
     # WRITES: invalidate affected caches
     async def create_rtmp_endpoints(
@@ -42,12 +47,13 @@ class RtmpEndpointServiceCached(RtmpEndpointService):
     async def update_rtmp_endpoints(
         self,
         rtmp_endpoints_id: UUID,
+        user_id: UUID,
         rtmp_endpoints_update: RtmpEndpointUpdate,
         db: AsyncSession,
     ) -> RtmpEndpointResponse | None:
-        res = await super().update_rtmp_endpoints(rtmp_endpoints_id, rtmp_endpoints_update, db)
-        # We don't know user_id here easily; nuke broad caches
-        await self._invalidate_after_change()
+        res = await super().update_rtmp_endpoints(rtmp_endpoints_id, user_id, rtmp_endpoints_update, db)
+        # Broad but safe invalidation for any potentially stale query key
+        await self._invalidate_after_change(user_id=user_id)
         return res
 
     async def delete_rtmp_endpoints(

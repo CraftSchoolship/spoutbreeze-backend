@@ -145,10 +145,10 @@ async def test_get_rtmp_endpoints_by_id_found_and_not_found(db_session: AsyncSes
     await db_session.commit()
 
     svc = RtmpEndpointService()
-    found = await svc.get_rtmp_endpoints_by_id(ep.id, db_session)
+    found = await svc.get_rtmp_endpoints_by_id(ep.id, test_user.id, db_session)
     assert found is not None and found.id == ep.id
 
-    missing = await svc.get_rtmp_endpoints_by_id(uuid.uuid4(), db_session)
+    missing = await svc.get_rtmp_endpoints_by_id(uuid.uuid4(), test_user.id, db_session)
     assert missing is None
 
 
@@ -168,7 +168,7 @@ async def test_update_rtmp_endpoints_success_partial(db_session: AsyncSession, t
 
     svc = RtmpEndpointService()
     upd = RtmpEndpointUpdate(title="new-title")
-    out = await svc.update_rtmp_endpoints(ep.id, upd, db_session)
+    out = await svc.update_rtmp_endpoints(ep.id, test_user.id, upd, db_session)
     assert out is not None and out.title == "new-title"
 
     # Verify persisted
@@ -179,9 +179,10 @@ async def test_update_rtmp_endpoints_success_partial(db_session: AsyncSession, t
 
 @pytest.mark.anyio
 async def test_update_rtmp_endpoints_not_found_returns_none(db_session: AsyncSession):
+    user_id = uuid.uuid4()
     svc = RtmpEndpointService()
     upd = RtmpEndpointUpdate(title="x")
-    out = await svc.update_rtmp_endpoints(uuid.uuid4(), upd, db_session)
+    out = await svc.update_rtmp_endpoints(uuid.uuid4(), user_id, upd, db_session)
     assert out is None
 
 
