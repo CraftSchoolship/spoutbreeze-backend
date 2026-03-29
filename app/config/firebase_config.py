@@ -1,17 +1,16 @@
 """
 Firebase Admin SDK initialization.
 
-Credentials are resolved in order:
-  1. ``FIREBASE_SERVICE_ACCOUNT_JSON`` env var — the raw JSON string
-     (ideal for deployments where you can't mount a file).
-  2. ``firebase_service_account_path`` setting — path to the JSON file on disk
-     (ideal for local development).
+Credentials are resolved from the ``FIREBASE_SERVICE_ACCOUNT_BASE64`` env var,
+which should contain a base64-encoded JSON string of the service account.
+(ideal for CI/CD and .env files).
 
-If neither is available the module gracefully disables push notifications.
+If unavailable, the module gracefully disables push notifications.
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 
@@ -41,8 +40,7 @@ def get_firebase_app() -> firebase_admin.App | None:
     if cred is None:
         logger.warning(
             "[Firebase] No credentials found. Push notifications via FCM are disabled. "
-            "Set FIREBASE_SERVICE_ACCOUNT_JSON env var or place the JSON file at "
-            f"'{settings.firebase_service_account_path}'."
+            "Set FIREBASE_SERVICE_ACCOUNT_BASE64 env var."
         )
         return None
 
@@ -57,24 +55,15 @@ def get_firebase_app() -> firebase_admin.App | None:
 
 
 def _resolve_credentials() -> credentials.Certificate | None:
-    """Try env-var JSON first, then fall back to file on disk."""
-    # --- Option 1: raw JSON string in env var ---
-    raw_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-    if raw_json:
-        try:
-            service_info = json.loads(raw_json)
-            return credentials.Certificate(service_info)
-        except Exception as exc:
-            logger.error(f"[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON: {exc}")
-            return None
+    """Read the base64 env var and decode it."""
+    b64_json = settings.firebase_service_account_base64 or os.environ.get("FIREBASE_SERVICE_ACCOUNT_BASE64")
+    if not b64_json:
+        return None
 
-    # --- Option 2: file path ---
-    sa_path = settings.firebase_service_account_path
-    if os.path.isfile(sa_path):
-        try:
-            return credentials.Certificate(sa_path)
-        except Exception as exc:
-            logger.error(f"[Firebase] Failed to load service-account file '{sa_path}': {exc}")
-            return None
-
-    return None
+    try:
+        decoded = base64.b64decode(b64_json)
+        service_info = json.loads(decoded)
+        return credentials.Certificate(service_info)
+    except Exception as exc:
+        logger.error(f"[Firebase] Failed to decode FIREBASE_SERVICE_ACCOUNT_BASE64: {exc}")
+        return None

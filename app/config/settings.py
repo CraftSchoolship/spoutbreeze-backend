@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
 
     # Firebase (push notifications)
-    firebase_service_account_path: str = "firebase-service-account.json"
+    firebase_service_account_base64: str | None = None
 
     model_config = {"env_file": ".env"}
 
