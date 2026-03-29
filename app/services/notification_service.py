@@ -491,7 +491,7 @@ class NotificationService:
     ) -> None:
         """Background task for push delivery with status update."""
         try:
-            success = await push_backend.deliver(title, body, data=data, user_id=user_id)
+            success = await push_backend.deliver("", title, body, data=data, user_id=user_id)
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Push] Background delivery error: {exc}")

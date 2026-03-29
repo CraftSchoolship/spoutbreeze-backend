@@ -131,6 +131,7 @@ class PushDeliveryBackend(DeliveryBackend):
 
     async def deliver(
         self,
+        recipient_email: str,
         title: str,
         body: str,
         data: dict[str, Any] | None = None,
