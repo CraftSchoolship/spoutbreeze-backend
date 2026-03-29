@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
-from email.message import EmailMessage
 from abc import ABC, abstractmethod
+from email.message import EmailMessage
 from typing import Any
 from uuid import UUID
 
@@ -202,13 +202,7 @@ class PushDeliveryBackend(DeliveryBackend):
             if send_response.exception is not None:
                 error = send_response.exception
                 # Token is no longer valid — queue for deletion
-                if isinstance(
-                    error,
-                    (
-                        fcm_messaging.UnregisteredError,
-                        fcm_messaging.SenderIdMismatchError,
-                    ),
-                ):
+                if isinstance(error, fcm_messaging.UnregisteredError | fcm_messaging.SenderIdMismatchError):
                     stale_tokens.append(tokens[i])
                     logger.info(f"[Push] Stale token removed for user {user_id}: {tokens[i][:20]}…")
                 else:

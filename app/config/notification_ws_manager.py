@@ -10,6 +10,7 @@ Tracks per-user WebSocket connections and provides:
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from uuid import UUID
 
 from fastapi import WebSocket
@@ -63,10 +64,8 @@ class NotificationWSManager:
         uid = str(user_id)
 
         if uid in self._connections:
-            try:
+            with suppress(ValueError):
                 self._connections[uid].remove(websocket)
-            except ValueError:
-                pass  # already removed
 
             if not self._connections[uid]:
                 del self._connections[uid]
