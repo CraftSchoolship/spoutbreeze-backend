@@ -13,6 +13,8 @@ backend is responsible for exponential back-off and giving up after
 from __future__ import annotations
 
 import asyncio
+import smtplib
+from email.message import EmailMessage
 from abc import ABC, abstractmethod
 from typing import Any
 from uuid import UUID
@@ -86,13 +88,33 @@ class EmailDeliveryBackend(DeliveryBackend):
         body: str,
         data: dict[str, Any] | None = None,
     ) -> bool:
-        """
-        TODO: Replace with real SMTP / API call.
-        For now, just log and return True in non-production environments.
-        """
-        logger.info(f"[Email-Stub] Would send email to {recipient_email} — subject='{title}' body_length={len(body)}")
-        # In development, treat as success so the pipeline keeps running.
-        return True
+        """Send an email using the configured SMTP relay."""
+        if not settings.smtp_password:
+            logger.warning("[Email] SMTP password is not configured. Skipping email delivery.")
+            return False
+
+        message = EmailMessage()
+        message["Subject"] = title
+        message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
+        message["To"] = recipient_email
+        message.set_content(body)
+
+        def _send_sync() -> None:
+            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                server.ehlo()
+                if settings.smtp_use_starttls:
+                    server.starttls()
+                    server.ehlo()
+                server.login(settings.smtp_username, settings.smtp_password)
+                server.send_message(message)
+
+        try:
+            await asyncio.to_thread(_send_sync)
+            logger.info(f"[Email] SMTP send success to {recipient_email}")
+            return True
+        except Exception as exc:
+            logger.error(f"[Email] SMTP send failed to {recipient_email}: {exc}")
+            return False
 
 
 # ---------------------------------------------------------------------------
