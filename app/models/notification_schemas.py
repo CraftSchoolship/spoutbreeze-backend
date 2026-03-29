@@ -51,6 +51,18 @@ class NotificationBulkCreate(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# FCM Token schemas
+# ---------------------------------------------------------------------------
+class FCMTokenRegisterRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+    device_info: str | None = Field(None, max_length=255)
+
+
+class FCMTokenDeleteRequest(BaseModel):
+    token: str = Field(..., min_length=1)
+
+
+# ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
 class NotificationResponse(BaseModel):

@@ -704,7 +704,7 @@ class EventService:
                     ),
                     send_in_app=True,
                     send_email=True,
-                    send_push=False,
+                    send_push=True,
                     idempotency_key=f"organizer_added:{event.id}:{organizer.id}",
                 )
                 await notification_service.notify(db=db, payload=payload, user_email=organizer.email)

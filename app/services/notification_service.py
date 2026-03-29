@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.logger_config import get_logger
 from app.config.notification_ws_manager import notification_ws_manager
 from app.config.redis_config import cache
+from app.models.fcm_token_model import FCMToken
 from app.models.notification_models import (
     DeliveryStatus,
     Notification,
@@ -347,6 +348,48 @@ class NotificationService:
         return NotificationPreferenceResponse.model_validate(pref)
 
     # ------------------------------------------------------------------
+    # FCM Tokens
+    # ------------------------------------------------------------------
+
+    async def register_fcm_token(self, db: AsyncSession, user_id: UUID, token: str, device_info: str | None = None) -> None:
+        """Register or update an FCM token for a user."""
+        stmt = select(FCMToken).where(FCMToken.token == token)
+        result = await db.execute(stmt)
+        existing = result.scalars().first()
+
+        if existing:
+            # If it's already registered to this user, just update device info
+            if existing.user_id == user_id:
+                existing.device_info = device_info
+                existing.updated_at = datetime.now()
+            else:
+                # Token belongs to someone else (e.g. logged out and logged in as different user)
+                # Re-assign it to the new user
+                existing.user_id = user_id
+                existing.device_info = device_info
+                existing.updated_at = datetime.now()
+        else:
+            # New token
+            new_token = FCMToken(user_id=user_id, token=token, device_info=device_info)
+            db.add(new_token)
+
+        try:
+            await db.commit()
+        except Exception as exc:
+            logger.error(f"[Notify] Failed to register FCM token for user {user_id}: {exc}")
+            await db.rollback()
+
+    async def unregister_fcm_token(self, db: AsyncSession, user_id: UUID, token: str) -> None:
+        """Remove an FCM token."""
+        stmt = delete(FCMToken).where(FCMToken.user_id == user_id, FCMToken.token == token)
+        try:
+            await db.execute(stmt)
+            await db.commit()
+        except Exception as exc:
+            logger.error(f"[Notify] Failed to unregister FCM token for user {user_id}: {exc}")
+            await db.rollback()
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -390,8 +433,19 @@ class NotificationService:
             asyncio.create_task(self._deliver_email(db, notification.id, user_email, notification.title, notification.body))
 
         # --- Push delivery (background) ---
-        if notification.send_push and user_email:
-            asyncio.create_task(self._deliver_push(db, notification.id, user_email, notification.title, notification.body))
+        if notification.send_push:
+            # Parse the stored JSON data string back into a dict for the push payload
+            push_data = None
+            if notification.data:
+                try:
+                    import json
+
+                    push_data = json.loads(notification.data) if isinstance(notification.data, str) else notification.data
+                except (json.JSONDecodeError, TypeError):
+                    push_data = None
+            asyncio.create_task(
+                self._deliver_push(db, notification.id, notification.title, notification.body, notification.user_id, push_data)
+            )
 
     async def _deliver_email(
         self,
@@ -430,13 +484,14 @@ class NotificationService:
         self,
         db: AsyncSession,
         notification_id: UUID,
-        recipient_email: str,
         title: str,
         body: str,
+        user_id: UUID,
+        data: dict | None = None,
     ) -> None:
         """Background task for push delivery with status update."""
         try:
-            success = await push_backend.deliver(recipient_email, title, body)
+            success = await push_backend.deliver(title, body, data=data, user_id=user_id)
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Push] Background delivery error: {exc}")

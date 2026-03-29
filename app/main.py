@@ -29,7 +29,7 @@ from app.controllers.user_controller import router as user_router
 from app.controllers.youtube_controller import router as youtube_router
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import connection_model, notification_models, payment_models, user_models  # noqa: F401
+from app.models import connection_model, fcm_token_model, notification_models, payment_models, user_models  # noqa: F401
 from app.services.bbb_service import BBBService
 from app.services.event_reminder_service import EventReminderService
 from app.services.stream_cleanup_service import StreamCleanupService

@@ -10,6 +10,8 @@ from app.config.logger_config import get_logger
 from app.config.notification_ws_manager import notification_ws_manager
 from app.controllers.user_controller import get_current_user
 from app.models.notification_schemas import (
+    FCMTokenDeleteRequest,
+    FCMTokenRegisterRequest,
     MarkReadRequest,
     MarkReadResponse,
     NotificationListResponse,
@@ -104,6 +106,33 @@ async def delete_all_read_notifications(
     """Delete all read notifications."""
     count = await notification_service.delete_all_read(db, current_user.id)
     return {"deleted_count": count}
+
+
+# ---------------------------------------------------------------------------
+# FCM Token endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/fcm-token", status_code=status.HTTP_200_OK)
+async def register_fcm_token(
+    body: FCMTokenRegisterRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Register or update an FCM token for the current user."""
+    await notification_service.register_fcm_token(db, current_user.id, body.token, body.device_info)
+    return {"status": "success", "message": "FCM token registered"}
+
+
+@router.delete("/fcm-token", status_code=status.HTTP_200_OK)
+async def unregister_fcm_token(
+    body: FCMTokenDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove an FCM token for the current user."""
+    await notification_service.unregister_fcm_token(db, current_user.id, body.token)
+    return {"status": "success", "message": "FCM token removed"}
 
 
 # ---------------------------------------------------------------------------
