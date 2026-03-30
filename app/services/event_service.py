@@ -676,8 +676,8 @@ class EventService:
         db: AsyncSession,
         event: Event,
         organizers: list[User],
-        creator_id: UUID,
-        creator_name: str,
+        creator_id: UUID | None = None,
+        creator_name: str = "",
     ) -> None:
         """
         Send an ORGANIZER_ADDED notification to each organizer.
@@ -685,9 +685,11 @@ class EventService:
         Idempotency key prevents duplicates if the same event+organizer
         combo is processed twice.
         """
+        effective_creator_id = creator_id or event.creator_id
+
         for organizer in organizers:
             # Never notify the creator about their own event
-            if organizer.id == creator_id:
+            if effective_creator_id is not None and organizer.id == effective_creator_id:
                 continue
             try:
                 payload = NotificationCreate(

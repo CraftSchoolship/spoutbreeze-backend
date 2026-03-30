@@ -86,6 +86,11 @@ class EventReminderService:
             for user in recipients:
                 idem_key = f"event_reminder:{event.id}:{user.id}:{date_key}"
 
+                # Skip duplicates up front so sent count reflects newly-created reminders.
+                existing = await notification_service._check_idempotency(db, idem_key)
+                if existing is not None:
+                    continue
+
                 try:
                     payload = NotificationCreate(
                         user_id=user.id,

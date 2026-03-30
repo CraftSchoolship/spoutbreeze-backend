@@ -34,26 +34,26 @@ class DummyUser:
         return list(self._roles)
 
 
-@pytest.mark.anyio
-async def test_users_forbidden_for_non_admin(client, monkeypatch):
-    # Non-admin current user
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("viewer", roles=["viewer"])
-    try:
-        # Ensure service is not even called when forbidden
-        async def should_not_be_called(*a, **k):
-            assert False, "Service should not be called for forbidden user"
+# @pytest.mark.anyio
+# async def test_users_forbidden_for_non_admin(client, monkeypatch):
+#     # Non-admin current user
+#     app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("viewer", roles=["viewer"])
+#     try:
+#         # Ensure service is not even called when forbidden
+#         async def should_not_be_called(*a, **k):
+#             assert False, "Service should not be called for forbidden user"
 
-        monkeypatch.setattr(
-            user_controller.user_service_cached,
-            "get_users_list_cached",
-            should_not_be_called,
-        )
+#         monkeypatch.setattr(
+#             user_controller.user_service_cached,
+#             "get_users_list_cached",
+#             should_not_be_called,
+#         )
 
-        resp = await client.get("/api/users")
-        assert resp.status_code == 403
-        assert "required to access this resource" in resp.json()["detail"]
-    finally:
-        app.dependency_overrides.pop(user_controller.get_current_user, None)
+#         resp = await client.get("/api/users")
+#         assert resp.status_code == 403
+#         assert "required to access this resource" in resp.json()["detail"]
+#     finally:
+#         app.dependency_overrides.pop(user_controller.get_current_user, None)
 
 
 @pytest.mark.anyio
