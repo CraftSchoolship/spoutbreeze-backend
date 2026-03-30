@@ -96,6 +96,18 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
 
+    # Firebase (push notifications)
+    firebase_service_account_base64: str | None = None
+
+    # SMTP (email notifications)
+    smtp_host: str = "smtp-relay.brevo.com"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = "no-reply@localhost"
+    smtp_from_name: str = "bluescale"
+    smtp_use_starttls: bool = True
+
     model_config = {"env_file": ".env"}
 
 

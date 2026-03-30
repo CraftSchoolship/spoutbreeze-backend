@@ -37,3 +37,5 @@ certs/
 *.key
 *.p12
 *.pfx
+
+firebase-service-account.json

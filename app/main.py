@@ -22,6 +22,7 @@ from app.controllers.facebook_controller import router as facebook_router
 from app.controllers.facebook_stream_controller import router as facebook_stream_router
 from app.controllers.health_controller import router as health_router
 from app.controllers.internal_controller import router as internal_router
+from app.controllers.notification_controller import router as notification_router
 from app.controllers.payment_controller import router as payment_router
 from app.controllers.rtmp_controller import router as stream_router
 from app.controllers.twitch_controller import router as twitch_router
@@ -29,8 +30,9 @@ from app.controllers.user_controller import router as user_router
 from app.controllers.youtube_controller import router as youtube_router
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import connection_model, payment_models, user_models  # noqa: F401
+from app.models import connection_model, fcm_token_model, notification_models, payment_models, user_models  # noqa: F401
 from app.services.bbb_service import BBBService
+from app.services.event_reminder_service import EventReminderService
 from app.services.stream_cleanup_service import StreamCleanupService
 from app.services.token_refresh_service import TokenRefreshService
 
@@ -133,6 +135,21 @@ async def lifespan(app: FastAPI):
         misfire_grace_time=600,  # 10 min grace
     )
     logger.info("[Scheduler] Token refresh job scheduled (every 30 min)")
+
+    # Set up scheduler for event reminders (every 15 minutes)
+    async def _event_reminder_job():
+        async with SessionLocal() as db:
+            await EventReminderService.send_due_reminders(db)
+
+    scheduler.add_job(
+        _event_reminder_job,
+        trigger=IntervalTrigger(minutes=15),
+        id="event_reminder_job",
+        name="Event Reminder Job",
+        replace_existing=True,
+        misfire_grace_time=300,  # 5 min grace
+    )
+    logger.info("[Scheduler] Event reminder job scheduled (every 15 min)")
 
     scheduler.start()
 
@@ -249,3 +266,4 @@ app.include_router(broadcaster_router)
 app.include_router(bbb_router)
 app.include_router(facebook_stream_router)
 app.include_router(payment_router)
+app.include_router(notification_router)

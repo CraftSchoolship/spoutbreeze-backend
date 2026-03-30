@@ -1,3 +1,4 @@
+import json
 import secrets
 from datetime import datetime
 from typing import Any
@@ -14,9 +15,12 @@ from app.models.bbb_schemas import JoinMeetingRequest
 from app.models.channel.channels_schemas import ChannelCreate, ChannelResponse
 from app.models.event.event_models import Event, EventStatus
 from app.models.event.event_schemas import EventCreate, EventResponse, EventUpdate
+from app.models.notification_models import NotificationType
+from app.models.notification_schemas import NotificationCreate
 from app.models.user_models import User
 from app.services.bbb_service import BBBService
 from app.services.channels_service import ChannelsService
+from app.services.notification_service import notification_service
 from app.utils.event_helpers import EventHelpers
 
 
@@ -166,6 +170,15 @@ class EventService:
             logger.info(f"Event {refreshed_event.title} created for user {user_id} in channel {channel.name}")
 
             logger.info(f"User with ID {user_id} created event {refreshed_event.title}")
+
+            # --- Notify organizers that they have been added ---
+            await self._notify_organizers_added(
+                db=db,
+                event=refreshed_event,
+                organizers=organizers,
+                creator_id=user_id,
+                creator_name=f"{refreshed_event.creator.first_name} {refreshed_event.creator.last_name}",
+            )
 
             event_response = self._create_event_response(refreshed_event)
             return event_response
@@ -544,6 +557,9 @@ class EventService:
                 await db.execute(update_stmt)
 
             # Handle organizers separately if provided
+            old_organizer_ids = {o.id for o in event.organizers}
+            new_organizers: list[User] = []
+
             if event_update.organizer_ids is not None:
                 # Clear existing organizers
                 event.organizers = []
@@ -555,11 +571,26 @@ class EventService:
                     organizer = organizer_result.scalars().first()
                     if organizer:
                         event.organizers.append(organizer)
+                        # Track genuinely new organizers for notification
+                        if organizer.id not in old_organizer_ids:
+                            new_organizers.append(organizer)
                     else:
                         logger.warning(f"User with ID {organizer_id} not found when updating event organizers")
 
             await db.commit()
             await db.refresh(event)
+
+            # Notify newly-added organizers
+            if new_organizers:
+                creator_name = f"{event.creator.first_name} {event.creator.last_name}"
+                await self._notify_organizers_added(
+                    db=db,
+                    event=event,
+                    organizers=new_organizers,
+                    creator_id=event.creator_id,
+                    creator_name=creator_name,
+                )
+
             return self._create_event_response(event)
         except Exception as e:
             logger.error(f"Error updating event with ID {event_id}: {e}")
@@ -635,3 +666,50 @@ class EventService:
         )
 
         return bbb_meeting
+
+    # ------------------------------------------------------------------
+    # Notification helpers
+    # ------------------------------------------------------------------
+
+    async def _notify_organizers_added(
+        self,
+        db: AsyncSession,
+        event: Event,
+        organizers: list[User],
+        creator_id: UUID | None = None,
+        creator_name: str = "",
+    ) -> None:
+        """
+        Send an ORGANIZER_ADDED notification to each organizer.
+        The event creator is excluded — they already know they created the event.
+        Idempotency key prevents duplicates if the same event+organizer
+        combo is processed twice.
+        """
+        effective_creator_id = creator_id or event.creator_id
+
+        for organizer in organizers:
+            # Never notify the creator about their own event
+            if effective_creator_id is not None and organizer.id == effective_creator_id:
+                continue
+            try:
+                payload = NotificationCreate(
+                    user_id=organizer.id,
+                    notification_type=NotificationType.ORGANIZER_ADDED,
+                    title="You've been added as an organizer",
+                    body=(f'{creator_name} added you as an organizer for the event "{event.title}".'),
+                    data=json.dumps(
+                        {
+                            "event_id": str(event.id),
+                            "event_title": event.title,
+                            "creator_name": creator_name,
+                        }
+                    ),
+                    send_in_app=True,
+                    send_email=True,
+                    send_push=True,
+                    idempotency_key=f"organizer_added:{event.id}:{organizer.id}",
+                )
+                await notification_service.notify(db=db, payload=payload, user_email=organizer.email)
+                logger.info(f"[Notify] ORGANIZER_ADDED sent to {organizer.username} for event {event.title}")
+            except Exception as exc:
+                logger.error(f"[Notify] Failed to send ORGANIZER_ADDED to {organizer.username}: {exc}")

@@ -16,6 +16,8 @@ from app.models.stream_models import RtmpEndpoint
 
 if TYPE_CHECKING:
     from app.models.connection_model import Connection
+    from app.models.fcm_token_model import FCMToken
+    from app.models.notification_models import Notification, NotificationPreference
     from app.models.payment_models import Subscription
 
 
@@ -71,6 +73,13 @@ class User(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    notifications: Mapped[list[Notification]] = relationship(
+        "Notification", back_populates="user", cascade="all, delete-orphan"
+    )
+    notification_preferences: Mapped[list[NotificationPreference]] = relationship(
+        "NotificationPreference", back_populates="user", cascade="all, delete-orphan"
+    )
+    fcm_tokens: Mapped[list[FCMToken]] = relationship("FCMToken", back_populates="user", cascade="all, delete-orphan")
 
     def get_roles_list(self) -> list[str]:
         """Get roles as a list from comma-separated string"""
