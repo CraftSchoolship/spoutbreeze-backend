@@ -56,4 +56,3 @@ class FCMToken(Base):
 
     # Relationship
     user: Mapped[User] = relationship("User", back_populates="fcm_tokens")
-
