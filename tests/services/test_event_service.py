@@ -156,7 +156,7 @@ async def test_start_event_wrong_owner_raises(db_session: AsyncSession, test_use
     evt_in = _make_event_create("Foreign Event", "ChanF")
     created = await svc.create_event(db_session, evt_in, test_user.id)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(PermissionError):
         await svc.start_event(db_session, created.id, other.id)
 
 
@@ -350,7 +350,7 @@ async def test_delete_event_wrong_owner_raises(db_session: AsyncSession, test_us
     db_session.add(other)
     await db_session.commit()
 
-    with pytest.raises(ValueError):
+    with pytest.raises(PermissionError):
         await svc.delete_event(db_session, created.id, other.id)
 
 
