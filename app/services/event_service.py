@@ -205,12 +205,15 @@ class EventService:
                     selectinload(Event.channel),
                     selectinload(Event.creator),
                 )
-                .where(Event.id == event_id, Event.creator_id == user_id)
+                .where(Event.id == event_id)
             )
             result = await db.execute(select_stmt)
             event = result.scalars().first()
             if not event:
-                raise ValueError(f"Event with ID {event_id} does not exist or does not belong to user {user_id}.")
+                raise ValueError(f"Event with ID {event_id} not found.")
+            # Only the creator can start the event
+            if event.creator_id != user_id:
+                raise PermissionError("You don't have permission to start this event. Only the creator can start it.")
 
             if not event.meeting_created:
                 # Create the meeting in BBB
@@ -607,12 +610,15 @@ class EventService:
         Delete an event by ID.
         """
         try:
-            # Check if the event exists and belongs to the user
-            select_stmt = select(Event).where(Event.id == event_id, Event.creator_id == user_id)
+            # Check if the event exists
+            select_stmt = select(Event).where(Event.id == event_id)
             result = await db.execute(select_stmt)
             event = result.scalars().first()
             if not event:
-                raise ValueError(f"Event with ID {event_id} does not exist or does not belong to user {user_id}.")
+                raise ValueError(f"Event with ID {event_id} not found.")
+            # Check ownership separately so the caller gets a distinct signal
+            if event.creator_id != user_id:
+                raise PermissionError("You don't have permission to delete this event. Only the creator can delete it.")
 
             # Delete the event
             delete_stmt = delete(Event).where(Event.id == event_id)

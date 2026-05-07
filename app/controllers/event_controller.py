@@ -109,6 +109,8 @@ async def start_event(
             raise HTTPException(status_code=400, detail="Failed to start event")
     except HTTPException:
         raise
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
         # Handle the case where the event ID is not found
         raise HTTPException(status_code=404, detail=str(e))
@@ -366,8 +368,9 @@ async def delete_event(
             user_id=UUID(str(current_user.id)),
         )
         return {"message": "Event deleted successfully"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except ValueError as e:
-        # Handle the case where the event ID is not found
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
