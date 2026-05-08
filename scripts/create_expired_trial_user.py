@@ -12,7 +12,7 @@ Usage:
 import asyncio
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from keycloak import KeycloakAdmin
 from keycloak.exceptions import KeycloakPostError
@@ -28,6 +28,7 @@ from app.models.payment_models import (
 
 # Import all models to ensure they're registered with SQLAlchemy
 from app.models.user_models import User
+from app.utils.datetime_utils import utcnow
 
 DEFAULT_EMAIL = "expired_trial_user@test.com"
 DEFAULT_USERNAME = "expired_trial_user"
@@ -134,13 +135,13 @@ async def create_expired_trial_user(
             print("   ℹ️  Subscription already exists — updating to expired …")
             existing_sub.plan = SubscriptionPlan.FREE.value
             existing_sub.status = SubscriptionStatus.EXPIRED.value
-            existing_sub.trial_start = datetime.utcnow() - timedelta(days=30)
-            existing_sub.trial_end = datetime.utcnow() - timedelta(days=16)
-            existing_sub.current_period_start = datetime.utcnow() - timedelta(days=30)
-            existing_sub.current_period_end = datetime.utcnow() - timedelta(days=16)
+            existing_sub.trial_start = utcnow() - timedelta(days=30)
+            existing_sub.trial_end = utcnow() - timedelta(days=16)
+            existing_sub.current_period_start = utcnow() - timedelta(days=30)
+            existing_sub.current_period_end = utcnow() - timedelta(days=16)
         else:
             # Create a subscription that expired 16 days ago (started 30 days ago)
-            trial_start = datetime.utcnow() - timedelta(days=30)
+            trial_start = utcnow() - timedelta(days=30)
             trial_end = trial_start + timedelta(days=14)  # ended 16 days ago
 
             # We need a stripe_customer_id — use a placeholder since this is a test user

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
+from app.utils.datetime_utils import utcnow
 from app.models.payment_models import (
     PLAN_LIMITS,
     Subscription,
@@ -303,7 +304,7 @@ class PaymentService:
             customer_id = await PaymentService.get_or_create_customer(user, db)
 
             # Create subscription record
-            trial_start = datetime.utcnow()
+            trial_start = utcnow()
             trial_end = trial_start + timedelta(days=14)
 
             subscription = Subscription(
@@ -557,7 +558,7 @@ class PaymentService:
 
         # Update subscription status
         subscription.status = SubscriptionStatus.CANCELED.value
-        subscription.canceled_at = datetime.utcnow()
+        subscription.canceled_at = utcnow()
 
         await db.commit()
         logger.info(f"Subscription {subscription_id} deleted")
@@ -786,7 +787,7 @@ class PaymentService:
         # Calculate trial days remaining
         trial_days_remaining = None
         if subscription.trial_end:
-            remaining = (subscription.trial_end - datetime.utcnow()).days
+            remaining = (subscription.trial_end - utcnow()).days
             trial_days_remaining = max(0, remaining)
 
         return {

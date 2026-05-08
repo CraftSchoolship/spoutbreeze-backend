@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -7,6 +7,7 @@ from httpx import AsyncClient
 
 from app.controllers.payment_controller import get_current_user
 from app.main import app
+from app.utils.datetime_utils import utcnow
 from app.models.payment_models import (
     Subscription,
     SubscriptionPlan,
@@ -153,7 +154,7 @@ async def test_get_usage_stats(client: AsyncClient, db_session, test_user: User,
             stripe_customer_id=f"cus_{uuid4().hex[:8]}",
             plan=SubscriptionPlan.FREE.value,
             status=SubscriptionStatus.TRIALING.value,
-            trial_end=datetime.utcnow() + timedelta(days=10),
+            trial_end=utcnow() + timedelta(days=10),
         )
         db_session.add(sub)
         await db_session.commit()

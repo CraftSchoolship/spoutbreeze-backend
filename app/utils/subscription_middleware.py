@@ -3,8 +3,6 @@ Subscription Middleware and Guards
 Enforces subscription plan limits and restrictions
 """
 
-from datetime import datetime
-
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +11,7 @@ from app.config.logger_config import get_logger
 from app.controllers.user_controller import get_current_user
 from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
 from app.models.user_models import User
+from app.utils.datetime_utils import utcnow
 from app.services.payment_service import PaymentService
 
 logger = get_logger("SubscriptionMiddleware")
@@ -69,7 +68,7 @@ class SubscriptionGuard:
             return
 
         if subscription.is_trial() and subscription.trial_end:
-            if datetime.utcnow() > subscription.trial_end:
+            if utcnow() > subscription.trial_end:
                 # Permanently expire the free trial in the DB
                 subscription.status = SubscriptionStatus.EXPIRED.value
                 subscription.user.has_used_free_trial = True

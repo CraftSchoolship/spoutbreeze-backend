@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.config.database.session import Base
+from app.utils.datetime_utils import utcnow
 
 if TYPE_CHECKING:
     from app.models.user_models import User
@@ -124,8 +125,8 @@ class Subscription(Base):
     canceled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     user: Mapped[User] = relationship("User", back_populates="subscription")
@@ -195,7 +196,7 @@ class Transaction(Base):
     receipt_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     subscription: Mapped[Subscription] = relationship("Subscription", back_populates="transactions")
@@ -214,4 +215,4 @@ class WebhookEvent(Base):
     )
     stripe_event_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
-    processed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    processed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
