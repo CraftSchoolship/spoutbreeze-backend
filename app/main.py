@@ -205,7 +205,6 @@ async def custom_swagger_ui_html():
         init_oauth={
             "clientId": setting.keycloak_client_id,
             "usePkceWithAuthorizationCodeGrant": True,
-            "clientSecret": setting.keycloak_client_secret,
             "realm": setting.keycloak_realm,
             "appName": "SpoutBreeze API",
             "scope": "openid profile email",
