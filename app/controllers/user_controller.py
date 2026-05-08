@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.dependencies import get_current_user  # re-exported below for backwards compat
 from app.config.database.session import get_db
 from app.config.logger_config import logger
 from app.config.redis_config import cache
@@ -20,6 +21,8 @@ from app.models.user_schemas import (
 from app.services.auth_service import AuthService
 from app.services.cached.user_service_cached import user_service_cached
 
+__all__ = ["get_current_user"]
+
 
 class UpdateResolutionRequest(BaseModel):
     default_resolution: str
@@ -29,54 +32,6 @@ auth_service = AuthService()
 settings = get_settings()
 
 router = APIRouter(prefix="/api", tags=["Users"])
-
-
-async def get_current_user(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    """
-    Get the current authenticated user from HTTP-only cookie with caching
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        # Get access token from cookie instead of Authorization header
-        access_token = request.cookies.get("access_token")
-
-        if not access_token:
-            raise credentials_exception
-
-        # Validate token and get payload
-        payload = auth_service.validate_token(access_token)
-
-        # Extract user identifier from token
-        keycloak_id = payload.get("sub")
-        if keycloak_id is None:
-            raise credentials_exception
-
-        # Get user from database with caching
-        user = await user_service_cached.get_user_by_keycloak_id_cached(keycloak_id, db)
-
-        if user is None:
-            raise credentials_exception
-
-        # Store the token payload in the user object for role extraction
-        # This is a temporary attribute, not persisted to database
-        user._token_payload = payload
-
-        return user
-
-    except HTTPException:
-        raise credentials_exception
-    except Exception as e:
-        # Log the error for debugging
-        logger.error(f"Authentication error: {str(e)}")
-        raise credentials_exception
 
 
 def get_current_user_roles(current_user: User = Depends(get_current_user)) -> list[str]:
@@ -160,7 +115,7 @@ async def update_user_profile(
         logger.info(f"[{request_id}] Updating Keycloak profile for user: {current_user.keycloak_id}")
 
         # Update user in Keycloak first
-        auth_service.update_user_profile(user_id=current_user.keycloak_id, user_data=profile_update_data)
+        await auth_service.update_user_profile(user_id=current_user.keycloak_id, user_data=profile_update_data)
 
         logger.info(f"[{request_id}] Updating database profile for user: {current_user.username}")
 
@@ -291,7 +246,7 @@ async def update_user_role(
 
         # Update role in Keycloak first
         try:
-            auth_service.update_user_role(user_id=target_user.keycloak_id, new_role=new_role)
+            await auth_service.update_user_role(user_id=target_user.keycloak_id, new_role=new_role)
         except HTTPException as e:
             logger.error(f"[{request_id}] Keycloak role update failed: {e.detail}")
             raise HTTPException(
@@ -503,7 +458,7 @@ async def delete_account(
             logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
 
         # Step 2: Delete user from Keycloak
-        auth_service.delete_user(current_user.keycloak_id)
+        await auth_service.delete_user(current_user.keycloak_id)
         logger.info(f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak")
 
         # Step 3: Delete user from database (cascade handles all related records)

@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
+from app.api.dependencies import get_current_user  # re-exported below for backwards compat
 from app.config.database.session import get_db
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
@@ -27,60 +28,13 @@ from app.models.payment_schemas import (
     TransactionResponse,
 )
 from app.models.user_models import User
-from app.services.auth_service import AuthService
-from app.services.cached.user_service_cached import user_service_cached
 from app.services.payment_service import PaymentService
 
 logger = get_logger("PaymentController")
 settings = get_settings()
-auth_service = AuthService()
 router = APIRouter(prefix="/api/payments", tags=["payments"])
 
-
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
-    """Dependency to get current authenticated user.
-
-    Accepts token from Authorization header (Bearer) or access_token cookie.
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-        # Prefer Authorization header for cross-origin/API calls
-        auth_header = request.headers.get("Authorization")
-        token: str | None = None
-
-        if auth_header and auth_header.lower().startswith("bearer "):
-            token = auth_header.split(" ", 1)[1].strip()
-        else:
-            # Fallback to cookie for browser navigations
-            token = request.cookies.get("access_token")
-
-        if not token:
-            raise credentials_exception
-
-        # Validate token and extract user id
-        payload = auth_service.validate_token(token)
-        keycloak_id = payload.get("sub")
-        if not keycloak_id:
-            raise credentials_exception
-
-        # Load user (cached)
-        user = await user_service_cached.get_user_by_keycloak_id_cached(keycloak_id, db)
-        if user is None:
-            raise credentials_exception
-
-        return user
-
-    except HTTPException:
-        # Normalize to 401 for callers
-        raise credentials_exception
-    except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        raise credentials_exception
+__all__ = ["get_current_user", "router"]
 
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
