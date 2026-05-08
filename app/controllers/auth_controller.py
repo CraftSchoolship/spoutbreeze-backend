@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 
@@ -16,6 +17,7 @@ from app.config.logger_config import logger
 from app.config.settings import get_settings, keycloak_openid
 from app.controllers.user_controller import get_current_user
 from app.models.auth_models import (
+    DevTokenRequest,
     TokenRequest,
     TokenResponse,
 )
@@ -221,14 +223,20 @@ async def protected_route(current_user: User = Depends(get_current_user)):
 async def exchange_token(request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Exchange authorization code for tokens and set secure cookies"""
     try:
-        token_data = auth_service.exchange_token(request.code, request.redirect_uri, request.code_verifier)
+        token_data = await auth_service.exchange_token(request.code, request.redirect_uri, request.code_verifier)
 
         # Extract the access token
         access_token = token_data.get("access_token")
 
         # Get user information
-        user_info = auth_service.get_user_info(cast(str, access_token))
-        print("User info:", user_info)
+        user_info = await auth_service.get_user_info(cast(str, access_token))
+        # Log safe identifiers only — the full Keycloak user_info payload
+        # contains email, given/family name, and other PII; previous code
+        # `print()`d it to stdout which leaked PII into pod / aggregator logs.
+        logger.info(
+            f"Token exchanged for sub={user_info.get('sub')} "
+            f"username={user_info.get('preferred_username')}"
+        )
 
         # Extract roles from user_info
         user_roles = extract_keycloak_roles(user_info, settings.keycloak_client_id)
@@ -273,7 +281,7 @@ async def refresh_token(request: Request, response: Response):
                 detail="Refresh token not found",
             )
 
-        token_data = auth_service.refresh_token(refresh_token)
+        token_data = await auth_service.refresh_token(refresh_token)
 
         # Set new authentication cookies
         set_auth_cookies(response, token_data)
@@ -300,29 +308,33 @@ async def refresh_token(request: Request, response: Response):
 
 @router.post("/dev-token", response_model=TokenResponse)
 async def get_dev_token(
-    username: str,
-    password: str,
+    request: DevTokenRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Development endpoint to get tokens (ONLY FOR LOCAL TESTING)"""
+    """Development endpoint to get tokens (ONLY FOR LOCAL TESTING).
+
+    Credentials must be sent in the JSON request body — never as query
+    parameters — so they don't end up in access logs / browser history.
+    """
     try:
         # Only allow in development mode
         env = settings.env
         if env != "development":
             raise HTTPException(status_code=404, detail="Not found")
 
-        # Get token from Keycloak
-        token_response = keycloak_openid.token(
+        # Get token from Keycloak (off the event loop — python-keycloak is sync)
+        token_response = await asyncio.to_thread(
+            keycloak_openid.token,
             grant_type="password",
-            username=username,
-            password=password,
+            username=request.username,
+            password=request.password,
             scope="openid profile email",
         )
 
         # Process user info
         access_token = token_response.get("access_token")
-        user_info = auth_service.get_user_info(cast(str, access_token))
+        user_info = await auth_service.get_user_info(cast(str, access_token))
 
         # Extract roles
         user_roles = extract_keycloak_roles(user_info, settings.keycloak_client_id)
@@ -342,6 +354,9 @@ async def get_dev_token(
             "user_info": user_info,
         }
 
+    except HTTPException:
+        # Preserve intentional HTTP errors (e.g. the 404 when env != "development")
+        raise
     except IntegrityError as e:
         await db.rollback()
         logger.error(f"Database integrity error: {str(e)}")
@@ -369,7 +384,7 @@ async def logout(
         refresh_token = request.cookies.get("refresh_token")
 
         if refresh_token:
-            auth_service.logout(refresh_token)
+            await auth_service.logout(refresh_token)
 
         # Clear authentication cookies
         clear_auth_cookies(response)

@@ -52,3 +52,14 @@ class LogoutRequest(BaseModel):
     """
 
     refresh_token: str
+
+
+class DevTokenRequest(BaseModel):
+    """Body for the development-only password-grant endpoint.
+
+    Credentials are accepted in the request body (not as query parameters)
+    so they don't end up in access logs, browser history, or proxy logs.
+    """
+
+    username: str = Field(..., description="Keycloak username")
+    password: str = Field(..., description="Keycloak password")

@@ -193,7 +193,7 @@ async def notification_websocket(websocket: WebSocket, db: AsyncSession = Depend
     async def _resolve_user(token: str) -> UUID | None:
         """Validate JWT and return the User's UUID, or None on failure."""
         try:
-            payload = auth_service.validate_token(token)
+            payload = await auth_service.validate_token(token)
             keycloak_id = payload.get("sub")
             if not keycloak_id:
                 return None
