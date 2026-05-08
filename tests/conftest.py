@@ -1,14 +1,22 @@
 import asyncio
+import os
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+# Force SSL verification off for the test suite — tests don't hit Keycloak,
+# but importing app.config.settings at module load triggers
+# resolve_ssl_verify(), which would otherwise raise if the user's local
+# .env points SSL_CERT_FILE at a path that doesn't exist on the test runner.
+os.environ.setdefault("SSL_VERIFY", "false")
+os.environ["SSL_CERT_FILE"] = ""
 
-from app.config.database.session import Base, get_db
-from app.main import app
+import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+
+from app.config.database.session import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
 from app.models.bbb_models import BbbMeeting
 from app.models.channel.channels_model import Channel
 from app.models.event.event_models import (
