@@ -2,7 +2,7 @@ import os
 from functools import lru_cache
 
 import urllib3
-from keycloak import KeycloakAdmin, KeycloakOpenID
+from keycloak import KeycloakOpenID
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
@@ -178,23 +178,22 @@ def resolve_ssl_verify(s: Settings) -> str | bool:
 
 verify_ssl: str | bool = resolve_ssl_verify(settings)
 
-# Keycloak configuration
-keycloak_openid = KeycloakOpenID(
-    server_url=settings.keycloak_server_url,
-    client_id=settings.keycloak_client_id,
-    realm_name=settings.keycloak_realm,
-    client_secret_key=settings.keycloak_client_secret,
-    verify=verify_ssl,
-)
 
-keycloak_admin = KeycloakAdmin(
-    server_url=settings.keycloak_server_url,
-    realm_name=settings.keycloak_realm,
-    client_id=settings.keycloak_client_id,
-    client_secret_key=settings.keycloak_client_secret,
-    verify=verify_ssl,
-)
+@lru_cache
+def get_keycloak_openid() -> KeycloakOpenID:
+    """Lazily build the shared KeycloakOpenID client.
 
-# Get OIDC config
-# oidc_config = keycloak_openid.well_know()
-# jwks_uri = oidc_config["jwks_uri"]
+    Previously the client was constructed at module import time, which
+    meant any test (or one-off script) that imported ``settings`` needed
+    a reachable Keycloak server. With ``@lru_cache`` the constructor
+    runs only on first call, and tests can swap the factory via
+    ``monkeypatch.setattr(auth_module, "get_keycloak_openid", ...)``.
+    """
+    s = get_settings()
+    return KeycloakOpenID(
+        server_url=s.keycloak_server_url,
+        client_id=s.keycloak_client_id,
+        realm_name=s.keycloak_realm,
+        client_secret_key=s.keycloak_client_secret,
+        verify=resolve_ssl_verify(s),
+    )

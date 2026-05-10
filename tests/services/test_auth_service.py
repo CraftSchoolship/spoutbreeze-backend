@@ -109,7 +109,10 @@ def make_service(monkeypatch, fake_settings):
     def _factory(fake_kc=None):
         kc = fake_kc or FakeKC()
         monkeypatch.setattr(auth_module, "get_settings", lambda: fake_settings)
-        monkeypatch.setattr(auth_module, "keycloak_openid", kc)
+        # The service now resolves the Keycloak client through a factory.
+        # Patch the factory so calls return our FakeKC without ever
+        # instantiating a real python-keycloak client.
+        monkeypatch.setattr(auth_module, "get_keycloak_openid", lambda: kc)
         return AuthService(), kc
 
     return _factory

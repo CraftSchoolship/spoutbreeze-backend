@@ -8,7 +8,7 @@ from jose import jwt
 from jose.exceptions import JWTClaimsError
 
 from app.config.logger_config import logger
-from app.config.settings import get_settings, keycloak_openid, resolve_ssl_verify
+from app.config.settings import get_keycloak_openid, get_settings, resolve_ssl_verify
 
 
 class AuthService:
@@ -30,7 +30,7 @@ class AuthService:
     async def _get_public_key(self) -> str:
         """Lazy-load the Keycloak public key on first use (off the event loop)."""
         if self._public_key is None:
-            raw_key = await asyncio.to_thread(keycloak_openid.public_key)
+            raw_key = await asyncio.to_thread(get_keycloak_openid().public_key)
             if not raw_key.startswith("-----BEGIN"):
                 self._public_key = f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
             else:
@@ -136,7 +136,7 @@ class AuthService:
         """
         try:
             token = await asyncio.to_thread(
-                keycloak_openid.token,
+                get_keycloak_openid().token,
                 grant_type="authorization_code",
                 code=code,
                 redirect_uri=redirect_uri,
@@ -165,7 +165,7 @@ class AuthService:
             HTTPException: If the refresh token is invalid or expired
         """
         try:
-            token_response = await asyncio.to_thread(keycloak_openid.refresh_token, refresh_token)
+            token_response = await asyncio.to_thread(get_keycloak_openid().refresh_token, refresh_token)
 
             # Get user info with the new token
             user_info = await self.get_user_info(token_response["access_token"])
@@ -190,7 +190,7 @@ class AuthService:
         Get user information from Keycloak using the access token
         """
         try:
-            user_info = await asyncio.to_thread(keycloak_openid.userinfo, access_token)
+            user_info = await asyncio.to_thread(get_keycloak_openid().userinfo, access_token)
             return user_info
         except Exception:
             raise HTTPException(
@@ -317,7 +317,7 @@ class AuthService:
         Logout the user by invalidating the refresh token
         """
         try:
-            await asyncio.to_thread(keycloak_openid.logout, refresh_token)
+            await asyncio.to_thread(get_keycloak_openid().logout, refresh_token)
             logger.info("User logged out successfully")
         except Exception as e:
             logger.error(f"Failed to logout: {str(e)}")
@@ -333,7 +333,7 @@ class AuthService:
         """
         try:
             # Try to get the well-known configuration
-            well_known = await asyncio.to_thread(keycloak_openid.well_known)
+            well_known = await asyncio.to_thread(get_keycloak_openid().well_known)
             return "authorization_endpoint" in well_known
         except Exception as e:
             logger.error(f"Keycloak health check failed: {str(e)}")

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database.session import get_db
 from app.config.logger_config import logger
-from app.config.settings import get_settings, keycloak_openid
+from app.config.settings import get_keycloak_openid, get_settings
 from app.controllers.user_controller import get_current_user
 from app.models.auth_models import (
     DevTokenRequest,
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/api", tags=["Authentication"])
 def _get_well_known() -> dict:
     """Lazy-load Keycloak well-known config to avoid import-time network calls."""
     if not hasattr(_get_well_known, "_cache"):
-        _get_well_known._cache = keycloak_openid.well_known()  # type: ignore[attr-defined]
+        _get_well_known._cache = get_keycloak_openid().well_known()  # type: ignore[attr-defined]
     return _get_well_known._cache  # type: ignore[attr-defined]
 
 
@@ -325,7 +325,7 @@ async def get_dev_token(
 
         # Get token from Keycloak (off the event loop — python-keycloak is sync)
         token_response = await asyncio.to_thread(
-            keycloak_openid.token,
+            get_keycloak_openid().token,
             grant_type="password",
             username=request.username,
             password=request.password,

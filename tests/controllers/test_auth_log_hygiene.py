@@ -73,7 +73,12 @@ async def test_dev_token_accepts_body_credentials(client, monkeypatch):
             "email": "alice@example.com",
         }
 
-    monkeypatch.setattr(auth_controller.keycloak_openid, "token", fake_token)
+    # Swap the Keycloak factory so the endpoint reaches our fake without
+    # instantiating a real python-keycloak client.
+    class _StubKC:
+        token = staticmethod(fake_token)
+
+    monkeypatch.setattr(auth_controller, "get_keycloak_openid", lambda: _StubKC)
     monkeypatch.setattr(auth_controller.auth_service, "get_user_info", fake_get_user_info)
 
     resp = await client.post(
