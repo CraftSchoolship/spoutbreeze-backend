@@ -1,0 +1,21 @@
+{% extends "_base.html" %}
+{% block content %}
+  <p style="margin:0 0 12px 0;">
+    {% if data.plan %}
+      Your payment for the <strong>{{ data.plan }}</strong> plan was successful.
+    {% else %}
+      {{ body }}
+    {% endif %}
+  </p>
+  {% if data.amount %}
+    <p style="margin:0 0 12px 0;color:#5f6368;">
+      Amount: <strong style="color:#202124;">{{ data.amount }}</strong>
+      {% if data.currency %}{{ data.currency | upper }}{% endif %}
+    </p>
+  {% endif %}
+  {% if data.invoice_url %}
+    <p style="margin:0 0 12px 0;">
+      <a href="{{ data.invoice_url }}" style="color:#1a73e8;">View your invoice</a>
+    </p>
+  {% endif %}
+{% endblock %}

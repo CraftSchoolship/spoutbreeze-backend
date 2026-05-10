@@ -428,23 +428,45 @@ class NotificationService:
         # Invalidate the cached unread counter after insert
         await self._invalidate_unread_cache(user_id)
 
+        # Parse the stored JSON data once for both email-template and push payloads
+        parsed_data: dict | None = None
+        if notification.data:
+            try:
+                import json
+
+                parsed_data = (
+                    json.loads(notification.data)
+                    if isinstance(notification.data, str)
+                    else notification.data
+                )
+            except (json.JSONDecodeError, TypeError):
+                parsed_data = None
+
         # --- Email delivery (background) ---
         if notification.send_email and user_email:
-            asyncio.create_task(self._deliver_email(db, notification.id, user_email, notification.title, notification.body))
+            asyncio.create_task(
+                self._deliver_email(
+                    db,
+                    notification.id,
+                    user_email,
+                    notification.title,
+                    notification.body,
+                    notification_type=notification.notification_type,
+                    data=parsed_data,
+                )
+            )
 
         # --- Push delivery (background) ---
         if notification.send_push:
-            # Parse the stored JSON data string back into a dict for the push payload
-            push_data = None
-            if notification.data:
-                try:
-                    import json
-
-                    push_data = json.loads(notification.data) if isinstance(notification.data, str) else notification.data
-                except (json.JSONDecodeError, TypeError):
-                    push_data = None
             asyncio.create_task(
-                self._deliver_push(db, notification.id, notification.title, notification.body, notification.user_id, push_data)
+                self._deliver_push(
+                    db,
+                    notification.id,
+                    notification.title,
+                    notification.body,
+                    notification.user_id,
+                    parsed_data,
+                )
             )
 
     async def _deliver_email(
@@ -454,10 +476,27 @@ class NotificationService:
         recipient_email: str,
         title: str,
         body: str,
+        notification_type: str | None = None,
+        data: dict | None = None,
     ) -> None:
         """Background task for email delivery with status update."""
+        html_body: str | None = None
+        if notification_type:
+            try:
+                from app.services.email_template_renderer import render_email
+
+                html_body = render_email(
+                    notification_type,
+                    {"title": title, "body": body, "data": data or {}},
+                )
+            except Exception as exc:
+                logger.warning(f"[Email] Template render failed for {notification_type}: {exc}")
+
+        attempts = 0
         try:
-            success = await email_backend.deliver(recipient_email, title, body)
+            success, attempts = await email_backend.deliver(
+                recipient_email, title, body, html_body=html_body
+            )
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Email] Background delivery error: {exc}")
@@ -472,7 +511,7 @@ class NotificationService:
                     .where(Notification.id == notification_id)
                     .values(
                         email_status=new_status,
-                        email_retry_count=Notification.email_retry_count + 1,
+                        email_retry_count=Notification.email_retry_count + max(attempts, 1),
                     )
                 )
                 await session.execute(stmt)
@@ -490,8 +529,11 @@ class NotificationService:
         data: dict | None = None,
     ) -> None:
         """Background task for push delivery with status update."""
+        attempts = 0
         try:
-            success = await push_backend.deliver("", title, body, data=data, user_id=user_id)
+            success, attempts = await push_backend.deliver(
+                "", title, body, data=data, user_id=user_id
+            )
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Push] Background delivery error: {exc}")
@@ -506,7 +548,7 @@ class NotificationService:
                     .where(Notification.id == notification_id)
                     .values(
                         push_status=new_status,
-                        push_retry_count=Notification.push_retry_count + 1,
+                        push_retry_count=Notification.push_retry_count + max(attempts, 1),
                     )
                 )
                 await session.execute(stmt)
@@ -531,7 +573,9 @@ class NotificationService:
                 "email": pref.email_enabled,
                 "push": pref.push_enabled,
             }
-        # Defaults: in-app on, email & push off
+        # Defaults when no preference row exists: all channels on. Once the user
+        # creates a preference row the stored values (email/push default to False
+        # at the column level) take over.
         return {"in_app": True, "email": True, "push": True}
 
     async def _check_idempotency(self, db: AsyncSession, key: str) -> Notification | None:
