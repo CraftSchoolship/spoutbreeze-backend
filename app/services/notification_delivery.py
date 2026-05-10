@@ -100,13 +100,18 @@ class EmailDeliveryBackend(DeliveryBackend):
         message.set_content(body)
 
         def _send_sync() -> None:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
-                server.ehlo()
-                if settings.smtp_use_starttls:
+            if settings.smtp_use_starttls:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                    server.ehlo()
                     server.starttls()
                     server.ehlo()
-                server.login(settings.smtp_username, settings.smtp_password)
-                server.send_message(message)
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    server.send_message(message)
+            else:
+                with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                    server.ehlo()
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    server.send_message(message)
 
         try:
             await asyncio.to_thread(_send_sync)
