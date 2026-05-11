@@ -84,7 +84,4 @@ async def test_dev_token_429_after_burst(client, monkeypatch):
     r3 = await client.post("/api/dev-token", json=body)
 
     statuses = [r1.status_code, r2.status_code, r3.status_code]
-    assert 429 in statuses, (
-        f"Expected at least one 429 after the configured 2/minute burst, "
-        f"got {statuses}"
-    )
+    assert 429 in statuses, f"Expected at least one 429 after the configured 2/minute burst, got {statuses}"

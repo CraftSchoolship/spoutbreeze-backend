@@ -142,10 +142,7 @@ def test_deserialize_refuses_classes_outside_app_namespace():
     if an attacker can write to Redis.
     """
     # Pretend an attacker wrote this payload to Redis
-    payload = (
-        b'{"__t": "sqlalchemy", "module": "subprocess", '
-        b'"class": "Popen", "__v": {"args": ["echo", "pwned"]}}'
-    )
+    payload = b'{"__t": "sqlalchemy", "module": "subprocess", "class": "Popen", "__v": {"args": ["echo", "pwned"]}}'
     with pytest.raises(ValueError, match="disallowed module"):
         _deserialize(payload)
 

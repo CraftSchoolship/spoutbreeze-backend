@@ -16,9 +16,7 @@ class Resp:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                "error", request=self.request, response=httpx.Response(self.status_code)
-            )
+            raise httpx.HTTPStatusError("error", request=self.request, response=httpx.Response(self.status_code))
 
     def json(self):
         return self._json

@@ -7,7 +7,6 @@ from httpx import AsyncClient
 
 from app.controllers.payment_controller import get_current_user
 from app.main import app
-from app.utils.datetime_utils import utcnow
 from app.models.payment_models import (
     Subscription,
     SubscriptionPlan,
@@ -16,6 +15,7 @@ from app.models.payment_models import (
     TransactionType,
 )
 from app.models.user_models import User
+from app.utils.datetime_utils import utcnow
 
 
 @pytest.mark.anyio

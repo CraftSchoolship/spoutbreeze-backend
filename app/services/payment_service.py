@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
-from app.utils.datetime_utils import utcnow
 from app.models.payment_models import (
     PLAN_LIMITS,
     Subscription,
@@ -31,6 +30,7 @@ from app.models.payment_schemas import (
     PlanLimits,
 )
 from app.models.user_models import User
+from app.utils.datetime_utils import utcnow
 
 logger = get_logger("PaymentService")
 settings = get_settings()

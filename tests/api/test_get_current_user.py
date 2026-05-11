@@ -48,9 +48,7 @@ async def test_authorization_header_path_is_consulted(client, monkeypatch):
         "/api/payments/subscription",
         headers={"Authorization": "Bearer header-token-xyz"},
     )
-    assert seen_tokens == ["header-token-xyz"], (
-        "Authorization header was not consulted by the unified dependency"
-    )
+    assert seen_tokens == ["header-token-xyz"], "Authorization header was not consulted by the unified dependency"
     assert resp.status_code == 401  # because `sub` was None
 
 

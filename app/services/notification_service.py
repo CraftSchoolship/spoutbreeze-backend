@@ -434,11 +434,7 @@ class NotificationService:
             try:
                 import json
 
-                parsed_data = (
-                    json.loads(notification.data)
-                    if isinstance(notification.data, str)
-                    else notification.data
-                )
+                parsed_data = json.loads(notification.data) if isinstance(notification.data, str) else notification.data
             except (json.JSONDecodeError, TypeError):
                 parsed_data = None
 
@@ -494,9 +490,7 @@ class NotificationService:
 
         attempts = 0
         try:
-            success, attempts = await email_backend.deliver(
-                recipient_email, title, body, html_body=html_body
-            )
+            success, attempts = await email_backend.deliver(recipient_email, title, body, html_body=html_body)
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Email] Background delivery error: {exc}")
@@ -531,9 +525,7 @@ class NotificationService:
         """Background task for push delivery with status update."""
         attempts = 0
         try:
-            success, attempts = await push_backend.deliver(
-                "", title, body, data=data, user_id=user_id
-            )
+            success, attempts = await push_backend.deliver("", title, body, data=data, user_id=user_id)
             new_status = DeliveryStatus.DELIVERED.value if success else DeliveryStatus.FAILED.value
         except Exception as exc:
             logger.error(f"[Push] Background delivery error: {exc}")

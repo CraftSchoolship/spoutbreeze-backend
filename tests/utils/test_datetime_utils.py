@@ -8,7 +8,7 @@ The shim has to satisfy two contracts:
    returned UTC, and rows produced by both forms must compare consistently.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.utils.datetime_utils import utcnow
 
@@ -22,9 +22,9 @@ def test_utcnow_returns_naive_datetime():
 def test_utcnow_is_actually_utc():
     """The returned naive value should equal `datetime.now(UTC)` stripped
     of its tzinfo, not local time."""
-    before = datetime.now(timezone.utc).replace(tzinfo=None)
+    before = datetime.now(UTC).replace(tzinfo=None)
     out = utcnow()
-    after = datetime.now(timezone.utc).replace(tzinfo=None)
+    after = datetime.now(UTC).replace(tzinfo=None)
     # `out` must be in the [before, after] window — proves it's UTC, not local.
     assert before <= out <= after
 

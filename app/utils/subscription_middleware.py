@@ -11,8 +11,8 @@ from app.config.logger_config import get_logger
 from app.controllers.user_controller import get_current_user
 from app.models.payment_models import Subscription, SubscriptionPlan, SubscriptionStatus
 from app.models.user_models import User
-from app.utils.datetime_utils import utcnow
 from app.services.payment_service import PaymentService
+from app.utils.datetime_utils import utcnow
 
 logger = get_logger("SubscriptionMiddleware")
 

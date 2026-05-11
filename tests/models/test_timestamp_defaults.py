@@ -37,8 +37,7 @@ async def test_user_created_at_differs_between_rows(db_session):
     await asyncio.sleep(0.01)
     u2 = await _make_user(db_session, "b")
     assert u1.created_at != u2.created_at, (
-        "User.created_at is shared across rows — `default=datetime.now()` "
-        "regression. Use `default=datetime.now` (no parens)."
+        "User.created_at is shared across rows — `default=datetime.now()` regression. Use `default=datetime.now` (no parens)."
     )
 
 
