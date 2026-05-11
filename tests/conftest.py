@@ -94,6 +94,23 @@ async def db_session(setup_database):
             await session.commit()
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset the in-memory SlowAPI counter between tests.
+
+    Without this, a test that exhausts a per-IP limit (the test client's
+    IP is constant) leaves the counter at the cap; the next test from
+    the same IP gets 429 before its endpoint body ever runs. Only
+    relevant for the in-memory backend used in CI; Redis-backed
+    deployments don't need this.
+    """
+    from app.utils.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest_asyncio.fixture
 async def client(db_session):
     """Create a test client with database dependency override"""

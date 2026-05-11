@@ -12,11 +12,12 @@ from app.utils import rate_limit
 
 
 def test_limiter_falls_back_to_in_memory_on_redis_failure(monkeypatch):
-    """If Redis URL is unreachable, _build_limiter must NOT raise — the
-    auth endpoints would otherwise fail to import and the whole app
-    won't start. In-memory fallback is safe-by-default."""
+    """If Redis is unreachable, _build_limiter must NOT raise — the auth
+    endpoints would otherwise fail at request time (after the limiter is
+    constructed but before the first PING). Stub the reachability probe
+    so we exercise the fallback path explicitly."""
 
-    class _BoomSettings:
+    class _Settings:
         rate_limit_enabled = True
         rate_limit_token = "20/minute"
         rate_limit_refresh = "30/minute"
@@ -24,19 +25,12 @@ def test_limiter_falls_back_to_in_memory_on_redis_failure(monkeypatch):
         rate_limit_payments = "60/minute"
         redis_url = "redis://nonexistent-host:6379/0"
 
-    # Force the Redis-backed constructor to raise so we exercise the
-    # fallback path explicitly.
-    from slowapi import Limiter
+    def _stub_unreachable(url: str) -> bool:
+        del url  # signal "intentionally discarded" to the IDE
+        return False
 
-    original_init = Limiter.__init__
-
-    def maybe_raise_init(self, *args, **kwargs):
-        if "storage_uri" in kwargs:
-            raise RuntimeError("redis unreachable (simulated)")
-        original_init(self, *args, **kwargs)
-
-    monkeypatch.setattr(Limiter, "__init__", maybe_raise_init)
-    monkeypatch.setattr(rate_limit, "get_settings", lambda: _BoomSettings())
+    monkeypatch.setattr(rate_limit, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(rate_limit, "_redis_is_reachable", _stub_unreachable)
 
     built = rate_limit._build_limiter()
     assert built is not None

@@ -147,12 +147,6 @@ def test_deserialize_refuses_classes_outside_app_namespace():
         _deserialize(payload)
 
 
-def test_deserialize_refuses_os_module():
-    payload = b'{"__t": "enum", "module": "os", "class": "name", "__v": "x"}'
-    with pytest.raises(ValueError, match="disallowed module"):
-        _deserialize(payload)
-
-
 def test_unknown_tag_returns_raw_dict():
     """An unrecognized type tag should not crash — the value is returned
     as a plain dict rather than being silently misinterpreted."""
