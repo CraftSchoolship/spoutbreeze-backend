@@ -208,9 +208,8 @@ class PushDeliveryBackend(DeliveryBackend):
             )
             messages.append(msg)
 
-        # Send all messages (run sync SDK call in executor to avoid blocking)
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: fcm_messaging.send_each(messages))
+        # Send all messages off the event loop — the FCM SDK is sync.
+        response = await asyncio.to_thread(fcm_messaging.send_each, messages)
 
         # Clean up stale tokens
         stale_tokens: list[str] = []
