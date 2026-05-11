@@ -168,10 +168,10 @@ async def get_user_by_id(
     user_id: UUID = Path(..., title="The ID of the user to get"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: bool = Depends(require_any_role("admin", "moderator")),
+    _: bool = Depends(require_any_role("super_admin", "moderator")),
 ):
     """
-    Get a user by ID (Admin/Moderator only) with caching
+    Get a user by ID (Super Admin / Moderator only) with caching
     """
     logger.info(f"User {current_user.username} is requesting user {user_id}")
 
@@ -201,10 +201,10 @@ async def update_user_role(
     user_id: UUID = Path(..., title="The ID of the user to update"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: bool = Depends(require_role("admin")),
+    _: bool = Depends(require_role("super_admin")),
 ):
     """
-    Update a user's role (Admin only) with cache invalidation
+    Update a user's role (Super Admin only) with cache invalidation
     """
     request_id = str(uuid.uuid4())
     logger.info(f"[{request_id}] Admin {current_user.username} updating role for user {user_id} to {role_data.role}")
@@ -227,8 +227,10 @@ async def update_user_role(
                 detail="Role cannot be empty",
             )
 
-        # Add validation for allowed roles
-        allowed_roles = ["admin", "moderator"]
+        # Add validation for allowed roles.
+        # `admin` is reserved for the future organization-scoped tier; it can
+        # be assigned now even though scoping isn't wired up yet.
+        allowed_roles = ["super_admin", "admin", "moderator"]
         if new_role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -281,10 +283,10 @@ async def invalidate_user_cache(
     user_id: UUID = Path(..., title="The ID of the user to invalidate cache for"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),  # Properly inject the database session
-    _: bool = Depends(require_role("admin")),
+    _: bool = Depends(require_role("super_admin")),
 ):
     """
-    Manually invalidate cache for a specific user (Admin only)
+    Manually invalidate cache for a specific user (Super Admin only)
     """
     try:
         # Get user to find keycloak_id using the properly injected db session
@@ -306,10 +308,10 @@ async def invalidate_user_cache(
 @router.get("/cache/stats")
 async def get_cache_stats(
     current_user: User = Depends(get_current_user),
-    _: bool = Depends(require_role("admin")),
+    _: bool = Depends(require_role("super_admin")),
 ):
     """
-    Get cache statistics (Admin only)
+    Get cache statistics (Super Admin only)
     """
     try:
         healthy = False

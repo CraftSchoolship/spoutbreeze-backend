@@ -57,8 +57,8 @@ class DummyUser:
 
 
 @pytest.mark.anyio
-async def test_users_allowed_for_admin(client, monkeypatch):
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["admin"])
+async def test_users_allowed_for_super_admin(client, monkeypatch):
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["super_admin"])
     try:
         # Return minimal, schema-like user dict
         async def fake_get_users(skip, limit, db):
@@ -87,7 +87,7 @@ async def test_users_allowed_for_admin(client, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_cache_stats_forbidden_for_non_admin(client):
+async def test_cache_stats_forbidden_for_non_super_admin(client):
     app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("viewer", roles=["viewer"])
     try:
         resp = await client.get("/api/cache/stats")
@@ -97,8 +97,8 @@ async def test_cache_stats_forbidden_for_non_admin(client):
 
 
 @pytest.mark.anyio
-async def test_cache_stats_allowed_for_admin(client, monkeypatch):
-    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["admin"])
+async def test_cache_stats_allowed_for_super_admin(client, monkeypatch):
+    app.dependency_overrides[user_controller.get_current_user] = lambda: DummyUser("admin", roles=["super_admin"])
     try:
 
         async def ok_health():

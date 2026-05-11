@@ -6,8 +6,9 @@ import requests
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from requests import Timeout as RequestsTimeout
-from sqlalchemy import select
+from sqlalchemy import select, update
 
+from app.config.database.session import SessionLocal
 from app.config.redis_config import cache
 from app.config.settings import get_settings
 from app.models.bbb_schemas import (
@@ -18,14 +19,51 @@ from app.models.bbb_schemas import (
     PluginManifests,
     StreamConfig,
 )
+from app.models.stream_session_models import StreamSession, StreamSessionStatus
 from app.models.user_models import User
 from app.services.bbb_service import BBBService
 from app.services.chat_gateway_client import chat_gateway_client
 from app.services.payment_service import PaymentService
+from app.utils.datetime_utils import utcnow
 
 logger = logging.getLogger("BroadcasterService")
 
 _STREAM_TTL = 86400  # 24 hours
+
+
+async def _record_stream_session_start(user_id: str, stream_id: str, platform: str | None) -> None:
+    """Best-effort persistence of stream start for admin analytics."""
+    try:
+        import uuid as _uuid
+
+        async with SessionLocal() as db:
+            session = StreamSession(
+                stream_id=stream_id,
+                user_id=_uuid.UUID(user_id),
+                platform=platform,
+                status=StreamSessionStatus.ACTIVE.value,
+            )
+            db.add(session)
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to persist stream session start ({stream_id}): {e}")
+
+
+async def _record_stream_session_end(stream_id: str) -> None:
+    """Best-effort update marking the stream session as ended."""
+    try:
+        async with SessionLocal() as db:
+            await db.execute(
+                update(StreamSession)
+                .where(
+                    StreamSession.stream_id == stream_id,
+                    StreamSession.status == StreamSessionStatus.ACTIVE.value,
+                )
+                .values(ended_at=utcnow(), status=StreamSessionStatus.ENDED.value)
+            )
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Failed to persist stream session end ({stream_id}): {e}")
 
 
 class StreamTracker:
@@ -39,6 +77,9 @@ class StreamTracker:
     @staticmethod
     async def add_stream(user_id: str, stream_id: str, platform: str | None = None) -> None:
         """Register a new active stream"""
+        # Persist to DB for historical analytics (best-effort; Redis remains source of truth)
+        await _record_stream_session_start(user_id, stream_id, platform)
+
         try:
             if cache.redis_client:
                 await cache.sadd(f"streams:user:{user_id}", stream_id)
@@ -59,6 +100,9 @@ class StreamTracker:
     @staticmethod
     async def remove_stream(stream_id: str) -> tuple[str | None, str | None]:
         """Remove a stream, returns (user_id, platform)"""
+        # Mark session as ended in DB (best-effort)
+        await _record_stream_session_end(stream_id)
+
         user_id = None
         platform = None
 

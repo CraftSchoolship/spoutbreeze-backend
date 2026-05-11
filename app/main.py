@@ -16,6 +16,7 @@ from app.config.database.session import SessionLocal
 from app.config.logger_config import get_logger
 from app.config.redis_config import cache
 from app.config.settings import get_settings
+from app.controllers.admin_controller import router as admin_router
 from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router
 from app.controllers.broadcaster_controller import router as broadcaster_router
@@ -33,7 +34,14 @@ from app.controllers.user_controller import router as user_router
 from app.controllers.youtube_controller import router as youtube_router
 
 # Import models to ensure they are registered with SQLAlchemy
-from app.models import connection_model, fcm_token_model, notification_models, payment_models, user_models  # noqa: F401
+from app.models import (  # noqa: F401
+    connection_model,
+    fcm_token_model,
+    notification_models,
+    payment_models,
+    stream_session_models,
+    user_models,
+)
 from app.services.bbb_service import BBBService
 from app.services.event_reminder_service import EventReminderService
 from app.services.stream_cleanup_service import StreamCleanupService
@@ -280,3 +288,4 @@ app.include_router(bbb_router)
 app.include_router(facebook_stream_router)
 app.include_router(payment_router)
 app.include_router(notification_router)
+app.include_router(admin_router)
