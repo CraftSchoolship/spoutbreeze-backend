@@ -106,6 +106,16 @@ class User(Base):
         """Check if user has admin role"""
         return self.has_role("admin")
 
+    def is_super_admin(self) -> bool:
+        """Check if user has the platform-wide super_admin role.
+
+        Use this for endpoints that should be restricted to the platform owner /
+        back office (analytics, cross-tenant user management, infra controls).
+        The `is_admin()` helper is reserved for the (future) organization-scoped
+        admin tier.
+        """
+        return self.has_role("super_admin")
+
     def is_moderator(self) -> bool:
         """Check if user has moderator role"""
         return self.has_role("moderator")
