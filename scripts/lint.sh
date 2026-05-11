@@ -10,4 +10,7 @@ ruff check . --fix
 echo "Running mypy type checking..."
 mypy app/
 
+echo "Running pytest..."
+pytest
+
 echo "All checks completed successfully."
