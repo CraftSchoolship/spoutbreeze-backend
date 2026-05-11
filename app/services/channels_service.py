@@ -310,9 +310,8 @@ class ChannelsService:
                 """Get recordings for a single event"""
                 try:
                     recording_request = GetRecordingRequest(meeting_id=event.meeting_id)
-                    # Make this async if possible, or use asyncio.to_thread for sync calls
-                    loop = asyncio.get_event_loop()
-                    recordings_response = await loop.run_in_executor(None, bbb_service.get_recordings, recording_request)
+                    # BBBService.get_recordings is sync — run it off the event loop.
+                    recordings_response = await asyncio.to_thread(bbb_service.get_recordings, recording_request)
 
                     if recordings_response.get("returncode") == "SUCCESS":
                         recordings = recordings_response.get("recordings", [])

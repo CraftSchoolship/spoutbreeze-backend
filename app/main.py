@@ -8,6 +8,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config.database.session import SessionLocal
 from app.config.logger_config import get_logger
@@ -35,6 +38,7 @@ from app.services.bbb_service import BBBService
 from app.services.event_reminder_service import EventReminderService
 from app.services.stream_cleanup_service import StreamCleanupService
 from app.services.token_refresh_service import TokenRefreshService
+from app.utils.rate_limit import limiter
 
 logger = get_logger("Main")
 setting = get_settings()
@@ -173,6 +177,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Wire up the SlowAPI rate limiter. State attachment + a 429-returning
+# exception handler are required so the per-endpoint `@limiter.limit(...)`
+# decorators in the auth/payment controllers actually take effect.
+app.state.limiter = limiter
+# SlowAPI's handler is typed `(Request, RateLimitExceeded) -> Response`,
+# narrower than Starlette's expected `(Request, Exception) -> Response`.
+# The runtime contract is correct; mypy can't reconcile the variance.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+app.add_middleware(SlowAPIMiddleware)
+
 
 # Add request logging middleware
 @app.middleware("http")
@@ -205,7 +219,6 @@ async def custom_swagger_ui_html():
         init_oauth={
             "clientId": setting.keycloak_client_id,
             "usePkceWithAuthorizationCodeGrant": True,
-            "clientSecret": setting.keycloak_client_secret,
             "realm": setting.keycloak_realm,
             "appName": "SpoutBreeze API",
             "scope": "openid profile email",

@@ -41,20 +41,19 @@ class DeliveryBackend(ABC):
         body: str,
         data: dict[str, Any] | None = None,
         user_id: UUID | None = None,
-    ) -> bool:
-        """Attempt delivery.  Return True on success, False on permanent failure."""
+    ) -> tuple[bool, int]:
+        """Attempt delivery. Return (success, attempts_made)."""
 
 
 # ---------------------------------------------------------------------------
-# Email backend (SMTP / transactional API stub)
+# Email backend (SMTP — Gmail / Workspace by default; any provider via SMTP_*)
 # ---------------------------------------------------------------------------
 class EmailDeliveryBackend(DeliveryBackend):
     """
-    Sends email notifications.
-
-    In production, swap the inner ``_send`` implementation for your
-    transactional provider (SendGrid, SES, Postmark, etc.).
-    Currently logs the email for development/staging.
+    Sends email notifications via the SMTP relay configured in ``SMTP_*``
+    environment variables. Builds RFC-2046 multipart/alternative messages
+    when ``html_body`` is supplied (plain text + HTML); otherwise sends
+    plain text only.
     """
 
     async def deliver(
@@ -64,29 +63,32 @@ class EmailDeliveryBackend(DeliveryBackend):
         body: str,
         data: dict[str, Any] | None = None,
         user_id: UUID | None = None,
-    ) -> bool:
+        html_body: str | None = None,
+    ) -> tuple[bool, int]:
+        attempts = 0
         for attempt in range(1, MAX_RETRIES + 1):
+            attempts = attempt
             try:
-                success = await self._send(recipient_email, title, body, data)
+                success = await self._send(recipient_email, title, body, html_body)
                 if success:
                     logger.info(f"[Email] Delivered to {recipient_email}: {title}")
-                    return True
+                    return True, attempts
             except Exception as exc:
+                logger.warning(f"[Email] Attempt {attempt}/{MAX_RETRIES} raised for {recipient_email}: {exc}")
+            if attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS**attempt
-                logger.warning(
-                    f"[Email] Attempt {attempt}/{MAX_RETRIES} failed for {recipient_email}: {exc}. Retrying in {wait}s …"
-                )
+                logger.info(f"[Email] Retrying in {wait}s …")
                 await asyncio.sleep(wait)
 
         logger.error(f"[Email] Permanently failed for {recipient_email}: {title}")
-        return False
+        return False, attempts
 
     async def _send(
         self,
         recipient_email: str,
         title: str,
         body: str,
-        data: dict[str, Any] | None = None,
+        html_body: str | None = None,
     ) -> bool:
         """Send an email using the configured SMTP relay."""
         if not settings.smtp_password:
@@ -98,15 +100,22 @@ class EmailDeliveryBackend(DeliveryBackend):
         message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
         message["To"] = recipient_email
         message.set_content(body)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
 
         def _send_sync() -> None:
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
-                server.ehlo()
-                if settings.smtp_use_starttls:
+            if settings.smtp_use_starttls:
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                    server.ehlo()
                     server.starttls()
                     server.ehlo()
-                server.login(settings.smtp_username, settings.smtp_password)
-                server.send_message(message)
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    server.send_message(message)
+            else:
+                with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                    server.ehlo()
+                    server.login(settings.smtp_username, settings.smtp_password)
+                    server.send_message(message)
 
         try:
             await asyncio.to_thread(_send_sync)
@@ -136,22 +145,24 @@ class PushDeliveryBackend(DeliveryBackend):
         body: str,
         data: dict[str, Any] | None = None,
         user_id: UUID | None = None,
-    ) -> bool:
+    ) -> tuple[bool, int]:
+        attempts = 0
         for attempt in range(1, MAX_RETRIES + 1):
+            attempts = attempt
             try:
                 success = await self._send(title, body, data, user_id)
                 if success:
                     logger.info(f"[Push] Delivered to user {user_id}: {title}")
-                    return True
+                    return True, attempts
             except Exception as exc:
+                logger.warning(f"[Push] Attempt {attempt}/{MAX_RETRIES} raised for user {user_id}: {exc}")
+            if attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS**attempt
-                logger.warning(
-                    f"[Push] Attempt {attempt}/{MAX_RETRIES} failed for user {user_id}: {exc}. Retrying in {wait}s …"
-                )
+                logger.info(f"[Push] Retrying in {wait}s …")
                 await asyncio.sleep(wait)
 
         logger.error(f"[Push] Permanently failed for user {user_id}: {title}")
-        return False
+        return False, attempts
 
     async def _send(
         self,
@@ -193,9 +204,8 @@ class PushDeliveryBackend(DeliveryBackend):
             )
             messages.append(msg)
 
-        # Send all messages (run sync SDK call in executor to avoid blocking)
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, lambda: fcm_messaging.send_each(messages))
+        # Send all messages off the event loop — the FCM SDK is sync.
+        response = await asyncio.to_thread(fcm_messaging.send_each, messages)
 
         # Clean up stale tokens
         stale_tokens: list[str] = []

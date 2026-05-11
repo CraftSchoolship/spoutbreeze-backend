@@ -2,9 +2,11 @@ import os
 from functools import lru_cache
 
 import urllib3
-from keycloak import KeycloakAdmin, KeycloakOpenID
+from keycloak import KeycloakOpenID
 from pydantic import Field
 from pydantic_settings import BaseSettings
+
+from app.config.logger_config import logger
 
 
 class Settings(BaseSettings):
@@ -49,6 +51,26 @@ class Settings(BaseSettings):
 
     # Database settings
     db_url: str
+    # Connection pool tuning for the async SQLAlchemy engine. Defaults are
+    # sized for a single web worker handling moderate concurrency; raise
+    # `db_pool_size` if a worker's connection acquisition becomes the
+    # bottleneck (visible as p99 latency spikes under load).
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
+    db_pool_pre_ping: bool = True
+    # SQL statement echo. Off by default everywhere — turn on with
+    # DB_ECHO=true only when you actively want to debug a query.
+    db_echo: bool = False
+
+    # Rate-limit defaults for auth endpoints. Strings use SlowAPI syntax
+    # ("<count>/<window>"), e.g. "10/minute", "100/hour", "5/second".
+    # Per-IP keying for unauthenticated endpoints, per-user for
+    # authenticated ones.
+    rate_limit_enabled: bool = True
+    rate_limit_token: str = "20/minute"
+    rate_limit_refresh: str = "30/minute"
+    rate_limit_dev_token: str = "5/minute"
+    rate_limit_payments: str = "60/minute"
 
     # Environment settings
     env: str = "development"
@@ -56,9 +78,14 @@ class Settings(BaseSettings):
     # Token encryption
     token_encryption_key: str  # Fernet key for encrypting OAuth tokens at rest
 
-    # SSL settings
-    ssl_cert_file: str = "certs/keycloak.pem"
+    # SSL verification for Keycloak HTTPS calls.
+    # Production: leave `ssl_verify=True` (default). Either rely on the
+    # system CA trust store (works for public CAs like Let's Encrypt) or
+    # set `ssl_cert_file` to a custom CA bundle for private / self-signed
+    # CAs. NEVER set `ssl_verify=False` in production — every Keycloak
+    # call (including admin credential exchange) becomes MITM-vulnerable.
     ssl_verify: bool = True
+    ssl_cert_file: str | None = None
 
     # Api base url - Let Pydantic handle this
     api_base_url: str = "http://localhost:8000"  # Default value
@@ -118,35 +145,65 @@ def get_settings():
 
 settings = get_settings()
 
-# Determine SSL verification method
-cert_path = "/app/certs/keycloak.pem"
-verify_ssl: str | bool
-if os.path.exists(cert_path):
-    # Use the certificate file if it exists
-    verify_ssl = cert_path
-    print(f"Using SSL certificate: {cert_path}")
-else:
-    # Disable SSL verification for development
-    verify_ssl = False
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Keycloak configuration
-keycloak_openid = KeycloakOpenID(
-    server_url=settings.keycloak_server_url,
-    client_id=settings.keycloak_client_id,
-    realm_name=settings.keycloak_realm,
-    client_secret_key=settings.keycloak_client_secret,
-    verify=verify_ssl,
-)
+def resolve_ssl_verify(s: Settings) -> str | bool:
+    """Resolve the `verify=` argument for HTTP clients hitting Keycloak.
 
-keycloak_admin = KeycloakAdmin(
-    server_url=settings.keycloak_server_url,
-    realm_name=settings.keycloak_realm,
-    client_id=settings.keycloak_client_id,
-    client_secret_key=settings.keycloak_client_secret,
-    verify=verify_ssl,
-)
+    Returns:
+        - ``False``: verification disabled — only when ``ssl_verify=False``
+          is set explicitly. Suitable for local dev only.
+        - ``str``  : path to a CA bundle for private / self-signed CAs.
+        - ``True`` : verify against the system CA trust store (the right
+          choice when Keycloak uses a public CA like Let's Encrypt).
 
-# Get OIDC config
-# oidc_config = keycloak_openid.well_know()
-# jwks_uri = oidc_config["jwks_uri"]
+    Raises:
+        RuntimeError: ``ssl_cert_file`` is set but the file is missing.
+            That's a deployment misconfiguration, not something to silently
+            fall back from — silent fallback was the original CVE.
+    """
+    if not s.ssl_verify:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        logger.warning(
+            "SSL verification is DISABLED for Keycloak HTTPS calls. "
+            "Every connection is MITM-vulnerable. Use only in local development."
+        )
+        return False
+
+    # Treat empty string as unset — the `.env.example` template uses
+    # `SSL_CERT_FILE=` (empty) as the "no custom CA" placeholder.
+    cert_file = (s.ssl_cert_file or "").strip()
+    if cert_file:
+        if not os.path.exists(cert_file):
+            raise RuntimeError(
+                f"ssl_cert_file is set to {cert_file!r} but the file does not "
+                "exist. Fix the path / cert volume mount, or unset ssl_cert_file "
+                "to use the system CA trust store."
+            )
+        logger.info(f"Using custom SSL CA bundle: {cert_file}")
+        return cert_file
+
+    logger.info("Using system CA trust store for Keycloak HTTPS verification")
+    return True
+
+
+verify_ssl: str | bool = resolve_ssl_verify(settings)
+
+
+@lru_cache
+def get_keycloak_openid() -> KeycloakOpenID:
+    """Lazily build the shared KeycloakOpenID client.
+
+    Previously the client was constructed at module import time, which
+    meant any test (or one-off script) that imported ``settings`` needed
+    a reachable Keycloak server. With ``@lru_cache`` the constructor
+    runs only on first call, and tests can swap the factory via
+    ``monkeypatch.setattr(auth_module, "get_keycloak_openid", ...)``.
+    """
+    s = get_settings()
+    return KeycloakOpenID(
+        server_url=s.keycloak_server_url,
+        client_id=s.keycloak_client_id,
+        realm_name=s.keycloak_realm,
+        client_secret_key=s.keycloak_client_secret,
+        verify=resolve_ssl_verify(s),
+    )

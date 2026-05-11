@@ -50,7 +50,7 @@ async def health_check(response: Response) -> dict[str, str]:
     Simple health check endpoint that verifies Keycloak connectivity
     """
     # Check Keycloak
-    keycloak_healthy = auth_service.health_check()
+    keycloak_healthy = await auth_service.health_check()
 
     if keycloak_healthy:
         return {"status": "healthy"}
@@ -64,7 +64,7 @@ async def readiness_check() -> dict[str, Any]:
     """
     Readiness check - determines if the application is ready to serve traffic
     """
-    keycloak_ready = auth_service.health_check()
+    keycloak_ready = await auth_service.health_check()
 
     return {
         "status": "ready" if keycloak_ready else "not ready",

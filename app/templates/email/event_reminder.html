@@ -1,0 +1,28 @@
+{% extends "_base.html" %}
+{% block content %}
+  <p style="margin:0 0 12px 0;">
+    {% if data.event_name %}
+      Reminder: <strong>{{ data.event_name }}</strong> is starting soon.
+    {% else %}
+      {{ body }}
+    {% endif %}
+  </p>
+  {% if data.event_start_time %}
+    <p style="margin:0 0 12px 0;color:#5f6368;">
+      Starts: <strong style="color:#202124;">{{ data.event_start_time }}</strong>
+    </p>
+  {% endif %}
+{% endblock %}
+{% block cta %}
+  {% if data.event_url %}
+    <tr>
+      <td style="padding:0 28px 24px 28px;">
+        <a href="{{ data.event_url }}"
+           style="display:inline-block;background:#1a73e8;color:#ffffff;text-decoration:none;
+                  padding:11px 22px;border-radius:6px;font-weight:600;font-size:14px;">
+          Join event
+        </a>
+      </td>
+    </tr>
+  {% endif %}
+{% endblock %}
