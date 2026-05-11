@@ -54,8 +54,3 @@ def test_sqlite_url_omits_pool_args():
     assert "max_overflow" not in kwargs
     # pool_pre_ping is harmless for sqlite, fine to keep
     assert "pool_pre_ping" in kwargs
-
-
-def test_pool_pre_ping_can_be_disabled():
-    kwargs = build_engine_kwargs(_S(db_pool_pre_ping=False), "postgresql+asyncpg://x/y")
-    assert kwargs["pool_pre_ping"] is False

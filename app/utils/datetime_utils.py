@@ -13,9 +13,9 @@ If the schema is later migrated to ``DateTime(timezone=True)`` columns, drop
 the ``.replace(tzinfo=None)`` and call sites work unchanged.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utcnow() -> datetime:
     """Return the current UTC time as a naive datetime."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)

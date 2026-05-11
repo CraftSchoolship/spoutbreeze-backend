@@ -14,8 +14,6 @@ from pathlib import Path
 import pytest
 
 import app.controllers.auth_controller as auth_controller
-from app.main import app
-
 
 REPO_SRC = Path(auth_controller.__file__).parent.parent  # app/
 

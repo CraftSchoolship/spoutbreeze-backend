@@ -57,7 +57,5 @@ def test_missing_cert_file_raises_loudly(tmp_path):
 def test_missing_cert_file_takes_precedence_over_explicit_opt_out():
     """Sanity: SSL_VERIFY=false short-circuits before we look at the cert
     path, so a stale SSL_CERT_FILE pointer doesn't block dev work."""
-    out = resolve_ssl_verify(
-        _FakeSettings(ssl_verify=False, ssl_cert_file="/nonexistent/path.pem")
-    )
+    out = resolve_ssl_verify(_FakeSettings(ssl_verify=False, ssl_cert_file="/nonexistent/path.pem"))
     assert out is False

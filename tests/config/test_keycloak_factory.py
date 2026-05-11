@@ -47,10 +47,7 @@ def test_get_keycloak_openid_is_memoized():
         second = get_keycloak_openid()
 
     assert first is second, "Factory must return the cached instance"
-    assert kc_mock.call_count == 1, (
-        f"KeycloakOpenID should be constructed exactly once, "
-        f"got {kc_mock.call_count}"
-    )
+    assert kc_mock.call_count == 1, f"KeycloakOpenID should be constructed exactly once, got {kc_mock.call_count}"
 
     # Leave no cached real-construction state behind for other tests.
     get_keycloak_openid.cache_clear()

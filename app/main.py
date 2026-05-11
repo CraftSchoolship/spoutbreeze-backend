@@ -189,7 +189,10 @@ app = FastAPI(
 # exception handler are required so the per-endpoint `@limiter.limit(...)`
 # decorators in the auth/payment controllers actually take effect.
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# SlowAPI's handler is typed `(Request, RateLimitExceeded) -> Response`,
+# narrower than Starlette's expected `(Request, Exception) -> Response`.
+# The runtime contract is correct; mypy can't reconcile the variance.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 
 

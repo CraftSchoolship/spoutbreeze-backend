@@ -35,11 +35,11 @@ _ALLOWED_DESERIALIZE_PREFIXES: tuple[str, ...] = ("app.",)
 
 def _to_json_safe(obj: Any) -> Any:
     """Recursively convert obj to a JSON-safe representation with type tags."""
-    if obj is None or isinstance(obj, (bool, int, float, str)):
+    if obj is None or isinstance(obj, bool | int | float | str):
         return obj
-    if isinstance(obj, (list, tuple)):
+    if isinstance(obj, list | tuple):
         return [_to_json_safe(x) for x in obj]
-    if isinstance(obj, (set, frozenset)):
+    if isinstance(obj, set | frozenset):
         return {_TYPE_TAG: "set", _VALUE_TAG: [_to_json_safe(x) for x in obj]}
     if isinstance(obj, dict):
         return {k: _to_json_safe(v) for k, v in obj.items()}
@@ -51,6 +51,7 @@ def _to_json_safe(obj: Any) -> Any:
         return {_TYPE_TAG: "uuid", _VALUE_TAG: str(obj)}
     if isinstance(obj, bytes):
         return {_TYPE_TAG: "bytes", _VALUE_TAG: obj.hex()}
+    cls: type
     if isinstance(obj, Enum):
         cls = obj.__class__
         return {
@@ -112,15 +113,15 @@ def _from_json_safe(obj: Any) -> Any:
             return {k: _from_json_safe(v) for k, v in obj.items()}
         value = obj.get(_VALUE_TAG)
         if tag == "datetime":
-            return datetime.fromisoformat(value)
+            return datetime.fromisoformat(cast(str, value))
         if tag == "date":
-            return date.fromisoformat(value)
+            return date.fromisoformat(cast(str, value))
         if tag == "uuid":
-            return UUID(value)
+            return UUID(cast(str, value))
         if tag == "bytes":
-            return bytes.fromhex(value)
+            return bytes.fromhex(cast(str, value))
         if tag == "set":
-            return {_from_json_safe(x) for x in value}
+            return {_from_json_safe(x) for x in cast(list, value)}
         if tag in {"enum", "pydantic", "sqlalchemy"}:
             cls = _resolve_class(obj["module"], obj["class"])
             decoded = _from_json_safe(value)
@@ -148,7 +149,7 @@ def _serialize(value: Any) -> bytes:
 
 
 def _deserialize(raw: bytes | str) -> Any:
-    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw
+    text = raw.decode("utf-8") if isinstance(raw, bytes | bytearray) else raw
     return _from_json_safe(json.loads(text))
 
 

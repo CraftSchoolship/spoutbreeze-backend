@@ -19,6 +19,7 @@ Settings (see app/config/settings.py):
 
 from __future__ import annotations
 
+import redis
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -28,13 +29,38 @@ from app.config.settings import get_settings
 logger = get_logger("RateLimit")
 
 
+def _redis_is_reachable(url: str) -> bool:
+    """Probe the configured Redis URL with a short-timeout PING.
+
+    SlowAPI's `Limiter(storage_uri=...)` constructor only stores the URL
+    — the connection isn't opened until the first rate-limit check. By
+    then we're past any try/except wrapping construction and a Redis
+    outage 500s the request instead of falling back. Probe up front so
+    the choice between Redis-backed and in-memory storage is made when
+    the app is starting, not on the hot path.
+    """
+    try:
+        client = redis.Redis.from_url(url, socket_connect_timeout=1, socket_timeout=1)
+        client.ping()
+        client.close()
+        return True
+    except Exception as e:
+        logger.warning(
+            f"Rate-limit Redis backend unreachable at {url} ({e!r}); "
+            "falling back to in-memory storage. Multi-worker deployments "
+            "will see per-worker counters instead of a shared limit — fix "
+            "Redis connectivity to restore correct behavior."
+        )
+        return False
+
+
 def _build_limiter() -> Limiter:
     """Construct the shared Limiter.
 
     Tries Redis first (so multiple workers share state); falls back to
-    SlowAPI's default in-memory storage on any error. The fallback is
-    safe-by-default — a single misconfigured pod can't accidentally
-    bypass rate-limiting by failing to reach Redis.
+    SlowAPI's default in-memory storage if Redis can't be PINGed at
+    startup. The fallback is safe-by-default — a single misconfigured
+    pod can't accidentally bypass rate-limiting by failing to reach Redis.
     """
     settings = get_settings()
 
@@ -49,20 +75,13 @@ def _build_limiter() -> Limiter:
         )
         return Limiter(key_func=get_remote_address, default_limits=[])
 
-    try:
+    if _redis_is_reachable(settings.redis_url):
         return Limiter(
             key_func=get_remote_address,
             storage_uri=settings.redis_url,
             strategy="fixed-window",
         )
-    except Exception as e:
-        logger.warning(
-            f"Rate-limit Redis backend unavailable ({e!r}); falling back "
-            "to in-memory storage. Multi-worker deployments will see "
-            "per-worker counters instead of a shared limit — fix Redis "
-            "connectivity to restore correct behavior."
-        )
-        return Limiter(key_func=get_remote_address, strategy="fixed-window")
+    return Limiter(key_func=get_remote_address, strategy="fixed-window")
 
 
 limiter: Limiter = _build_limiter()

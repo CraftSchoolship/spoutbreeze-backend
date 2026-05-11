@@ -240,10 +240,7 @@ async def exchange_token(
         # Log safe identifiers only — the full Keycloak user_info payload
         # contains email, given/family name, and other PII; previous code
         # `print()`d it to stdout which leaked PII into pod / aggregator logs.
-        logger.info(
-            f"Token exchanged for sub={user_info.get('sub')} "
-            f"username={user_info.get('preferred_username')}"
-        )
+        logger.info(f"Token exchanged for sub={user_info.get('sub')} username={user_info.get('preferred_username')}")
 
         # Extract roles from user_info
         user_roles = extract_keycloak_roles(user_info, settings.keycloak_client_id)

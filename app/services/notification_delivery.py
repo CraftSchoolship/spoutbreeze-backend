@@ -74,9 +74,7 @@ class EmailDeliveryBackend(DeliveryBackend):
                     logger.info(f"[Email] Delivered to {recipient_email}: {title}")
                     return True, attempts
             except Exception as exc:
-                logger.warning(
-                    f"[Email] Attempt {attempt}/{MAX_RETRIES} raised for {recipient_email}: {exc}"
-                )
+                logger.warning(f"[Email] Attempt {attempt}/{MAX_RETRIES} raised for {recipient_email}: {exc}")
             if attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS**attempt
                 logger.info(f"[Email] Retrying in {wait}s …")
@@ -157,9 +155,7 @@ class PushDeliveryBackend(DeliveryBackend):
                     logger.info(f"[Push] Delivered to user {user_id}: {title}")
                     return True, attempts
             except Exception as exc:
-                logger.warning(
-                    f"[Push] Attempt {attempt}/{MAX_RETRIES} raised for user {user_id}: {exc}"
-                )
+                logger.warning(f"[Push] Attempt {attempt}/{MAX_RETRIES} raised for user {user_id}: {exc}")
             if attempt < MAX_RETRIES:
                 wait = BASE_BACKOFF_SECONDS**attempt
                 logger.info(f"[Push] Retrying in {wait}s …")

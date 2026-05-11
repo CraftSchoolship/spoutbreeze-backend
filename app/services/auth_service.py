@@ -100,10 +100,7 @@ class AuthService:
                 # Keycloak audience-mapper misconfiguration is easy to
                 # spot in logs (it shows up as the same error on every
                 # request).
-                logger.error(
-                    f"JWT claims rejected (audience mismatch likely; "
-                    f"expected aud={self.keycloak_client_id!r}): {e}"
-                )
+                logger.error(f"JWT claims rejected (audience mismatch likely; expected aud={self.keycloak_client_id!r}): {e}")
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token: claim verification failed",
@@ -135,12 +132,15 @@ class AuthService:
         Exchange authorization code for tokens
         """
         try:
+            # `code_verifier` is passed via the library's `**extra: dict`
+            # parameter, which mypy refuses to accept a str for. Silence
+            # the false positive — the library accepts strings at runtime.
             token = await asyncio.to_thread(
                 get_keycloak_openid().token,
                 grant_type="authorization_code",
                 code=code,
                 redirect_uri=redirect_uri,
-                code_verifier=code_verifier,
+                code_verifier=code_verifier,  # type: ignore[arg-type]
                 scope="openid profile email account",
             )
             return token
@@ -270,10 +270,7 @@ class AuthService:
                 logger.debug(f"Keycloak update data: {keycloak_user_data}")
 
                 # Update user with the correctly formatted data using Keycloak Admin API
-                update_url = (
-                    f"{self.settings.keycloak_server_url}/admin/realms/"
-                    f"{self.settings.keycloak_realm}/users/{user_id}"
-                )
+                update_url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/users/{user_id}"
 
                 headers = {
                     "Authorization": f"Bearer {admin_token}",
@@ -491,9 +488,7 @@ class AuthService:
 
                 # Get current client roles for the user
                 current_roles = await self._get_user_client_roles(client, admin_token, user_id, client_id)
-                logger.info(
-                    f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}"
-                )
+                logger.info(f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}")
 
                 # Remove all existing client roles for this client
                 if current_roles:
@@ -537,10 +532,7 @@ class AuthService:
             async with self._http_client() as client:
                 admin_token = await self._get_admin_token(client=client)
 
-                delete_url = (
-                    f"{self.settings.keycloak_server_url}/admin/realms/"
-                    f"{self.settings.keycloak_realm}/users/{user_id}"
-                )
+                delete_url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/users/{user_id}"
 
                 headers = {
                     "Authorization": f"Bearer {admin_token}",
