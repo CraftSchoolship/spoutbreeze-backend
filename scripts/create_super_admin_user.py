@@ -85,9 +85,7 @@ async def create_super_admin_user(
                 "lastName": last_name,
                 "enabled": True,
                 "emailVerified": True,
-                "credentials": [
-                    {"type": "password", "value": password, "temporary": False}
-                ],
+                "credentials": [{"type": "password", "value": password, "temporary": False}],
             }
         )
         print(f"   ✅ Keycloak user created — ID: {keycloak_id}")
@@ -100,9 +98,7 @@ async def create_super_admin_user(
                 keycloak_id = users[0]["id"]
                 print(f"   ℹ️  Keycloak user already exists — ID: {keycloak_id}")
                 try:
-                    kc_admin.set_user_password(
-                        user_id=keycloak_id, password=password, temporary=False
-                    )
+                    kc_admin.set_user_password(user_id=keycloak_id, password=password, temporary=False)
                     print("   ✅ Password reset to requested value")
                 except Exception as pw_err:
                     print(f"   ⚠️  Could not reset password: {pw_err}")
@@ -121,9 +117,7 @@ async def create_super_admin_user(
         kc_admin.get_realm_role(TARGET_ROLE)
         print(f"   ℹ️  Realm role '{TARGET_ROLE}' already exists")
     except Exception:
-        kc_admin.create_realm_role(
-            {"name": TARGET_ROLE, "description": "Platform-wide back-office admin"}
-        )
+        kc_admin.create_realm_role({"name": TARGET_ROLE, "description": "Platform-wide back-office admin"})
         print(f"   ✅ Created realm role '{TARGET_ROLE}'")
 
     # ── Step 3: Assign `super_admin` and strip legacy `admin` ───────
@@ -136,9 +130,7 @@ async def create_super_admin_user(
         legacy_role = kc_admin.get_realm_role(LEGACY_ROLE)
         current_roles = kc_admin.get_realm_roles_of_user(user_id=keycloak_id)
         if any(r.get("name") == LEGACY_ROLE for r in current_roles):
-            kc_admin.delete_realm_roles_of_user(
-                user_id=keycloak_id, roles=[legacy_role]
-            )
+            kc_admin.delete_realm_roles_of_user(user_id=keycloak_id, roles=[legacy_role])
             print(f"   ✅ Removed stale '{LEGACY_ROLE}' realm role assignment")
     except Exception:
         # Legacy role doesn't exist or user never had it — both fine.

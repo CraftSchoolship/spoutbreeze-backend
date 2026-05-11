@@ -47,9 +47,7 @@ class StreamSession(Base):
     platform: Mapped[str | None] = mapped_column(String, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    status: Mapped[str] = mapped_column(
-        String, default=StreamSessionStatus.ACTIVE.value, nullable=False
-    )
+    status: Mapped[str] = mapped_column(String, default=StreamSessionStatus.ACTIVE.value, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     user: Mapped[User] = relationship("User")

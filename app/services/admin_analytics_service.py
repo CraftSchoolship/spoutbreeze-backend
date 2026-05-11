@@ -27,15 +27,9 @@ class AdminAnalyticsService:
         d30 = now - timedelta(days=30)
 
         total = (await db.execute(select(func.count(User.id)))).scalar_one()
-        active = (
-            await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))
-        ).scalar_one()
-        new_7d = (
-            await db.execute(select(func.count(User.id)).where(User.created_at >= d7))
-        ).scalar_one()
-        new_30d = (
-            await db.execute(select(func.count(User.id)).where(User.created_at >= d30))
-        ).scalar_one()
+        active = (await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))).scalar_one()
+        new_7d = (await db.execute(select(func.count(User.id)).where(User.created_at >= d7))).scalar_one()
+        new_30d = (await db.execute(select(func.count(User.id)).where(User.created_at >= d30))).scalar_one()
 
         # Role breakdown: roles is comma-separated, so compute in Python over a
         # lightweight projection. Population is small (admins/moderators); avoid
@@ -49,11 +43,7 @@ class AdminAnalyticsService:
                 if r:
                     by_role[r] = by_role.get(r, 0) + 1
 
-        latest_q = (
-            select(User)
-            .order_by(User.created_at.desc())
-            .limit(5)
-        )
+        latest_q = select(User).order_by(User.created_at.desc()).limit(5)
         latest = (await db.execute(latest_q)).scalars().all()
 
         return {
@@ -83,24 +73,16 @@ class AdminAnalyticsService:
         d30 = now - timedelta(days=30)
 
         total = (await db.execute(select(func.count(Event.id)))).scalar_one()
-        created_7d = (
-            await db.execute(select(func.count(Event.id)).where(Event.created_at >= d7))
-        ).scalar_one()
-        created_30d = (
-            await db.execute(select(func.count(Event.id)).where(Event.created_at >= d30))
-        ).scalar_one()
+        created_7d = (await db.execute(select(func.count(Event.id)).where(Event.created_at >= d7))).scalar_one()
+        created_30d = (await db.execute(select(func.count(Event.id)).where(Event.created_at >= d30))).scalar_one()
 
-        status_rows = (
-            await db.execute(select(Event.status, func.count(Event.id)).group_by(Event.status))
-        ).all()
+        status_rows = (await db.execute(select(Event.status, func.count(Event.id)).group_by(Event.status))).all()
         by_status: dict[str, int] = {s.value if hasattr(s, "value") else str(s): c for s, c in status_rows}
         for s in EventStatus:
             by_status.setdefault(s.value, 0)
 
         bbb_total = (await db.execute(select(func.count(BbbMeeting.id)))).scalar_one()
-        bbb_30d = (
-            await db.execute(select(func.count(BbbMeeting.id)).where(BbbMeeting.created_at >= d30))
-        ).scalar_one()
+        bbb_30d = (await db.execute(select(func.count(BbbMeeting.id)).where(BbbMeeting.created_at >= d30))).scalar_one()
 
         latest_q = select(Event).order_by(Event.created_at.desc()).limit(5)
         latest = (await db.execute(latest_q)).scalars().all()
@@ -133,20 +115,14 @@ class AdminAnalyticsService:
 
         total = (await db.execute(select(func.count(StreamSession.id)))).scalar_one()
         sessions_24h = (
-            await db.execute(
-                select(func.count(StreamSession.id)).where(StreamSession.started_at >= d1)
-            )
+            await db.execute(select(func.count(StreamSession.id)).where(StreamSession.started_at >= d1))
         ).scalar_one()
         sessions_30d = (
-            await db.execute(
-                select(func.count(StreamSession.id)).where(StreamSession.started_at >= d30)
-            )
+            await db.execute(select(func.count(StreamSession.id)).where(StreamSession.started_at >= d30))
         ).scalar_one()
         active_now = (
             await db.execute(
-                select(func.count(StreamSession.id)).where(
-                    StreamSession.status == StreamSessionStatus.ACTIVE.value
-                )
+                select(func.count(StreamSession.id)).where(StreamSession.status == StreamSessionStatus.ACTIVE.value)
             )
         ).scalar_one()
 
@@ -199,16 +175,12 @@ class AdminAnalyticsService:
         d30 = now - timedelta(days=30)
 
         plan_rows = (
-            await db.execute(
-                select(Subscription.plan, func.count(Subscription.id)).group_by(Subscription.plan)
-            )
+            await db.execute(select(Subscription.plan, func.count(Subscription.id)).group_by(Subscription.plan))
         ).all()
         subs_by_plan: dict[str, int] = {p: c for p, c in plan_rows}
 
         status_rows = (
-            await db.execute(
-                select(Subscription.status, func.count(Subscription.id)).group_by(Subscription.status)
-            )
+            await db.execute(select(Subscription.status, func.count(Subscription.id)).group_by(Subscription.status))
         ).all()
         subs_by_status: dict[str, int] = {s: c for s, c in status_rows}
 
@@ -237,9 +209,7 @@ class AdminAnalyticsService:
         ).scalar_one()
 
         transactions_30d_count = (
-            await db.execute(
-                select(func.count(Transaction.id)).where(Transaction.created_at >= d30)
-            )
+            await db.execute(select(func.count(Transaction.id)).where(Transaction.created_at >= d30))
         ).scalar_one()
 
         failed_payments_7d = (
