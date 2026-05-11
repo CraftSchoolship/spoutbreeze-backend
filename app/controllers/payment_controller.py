@@ -29,6 +29,7 @@ from app.models.payment_schemas import (
 )
 from app.models.user_models import User
 from app.services.payment_service import PaymentService
+from app.utils.rate_limit import limiter
 
 logger = get_logger("PaymentController")
 settings = get_settings()
@@ -38,7 +39,9 @@ __all__ = ["get_current_user", "router"]
 
 
 @router.post("/checkout", response_model=CheckoutSessionResponse)
+@limiter.limit(lambda: settings.rate_limit_payments)
 async def create_checkout_session(
+    request: Request,
     checkout_data: CreateCheckoutSessionRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -66,7 +69,9 @@ async def create_checkout_session(
 
 
 @router.post("/portal", response_model=CustomerPortalResponse)
+@limiter.limit(lambda: settings.rate_limit_payments)
 async def create_customer_portal(
+    request: Request,
     portal_data: CustomerPortalRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -126,7 +131,9 @@ async def get_subscription(
 
 
 @router.post("/subscription/cancel", response_model=SubscriptionResponse)
+@limiter.limit(lambda: settings.rate_limit_payments)
 async def cancel_subscription(
+    request: Request,
     cancel_data: CancelSubscriptionRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

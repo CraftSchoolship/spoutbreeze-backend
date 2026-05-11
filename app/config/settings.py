@@ -62,6 +62,16 @@ class Settings(BaseSettings):
     # DB_ECHO=true only when you actively want to debug a query.
     db_echo: bool = False
 
+    # Rate-limit defaults for auth endpoints. Strings use SlowAPI syntax
+    # ("<count>/<window>"), e.g. "10/minute", "100/hour", "5/second".
+    # Per-IP keying for unauthenticated endpoints, per-user for
+    # authenticated ones.
+    rate_limit_enabled: bool = True
+    rate_limit_token: str = "20/minute"
+    rate_limit_refresh: str = "30/minute"
+    rate_limit_dev_token: str = "5/minute"
+    rate_limit_payments: str = "60/minute"
+
     # Environment settings
     env: str = "development"
 

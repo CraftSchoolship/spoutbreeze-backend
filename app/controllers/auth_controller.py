@@ -23,6 +23,7 @@ from app.models.auth_models import (
 )
 from app.models.user_models import User
 from app.services.auth_service import AuthService
+from app.utils.rate_limit import limiter
 
 bearer_scheme = HTTPBearer()
 settings = get_settings()
@@ -220,10 +221,16 @@ async def protected_route(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/token")
-async def exchange_token(request: TokenRequest, response: Response, db: AsyncSession = Depends(get_db)):
+@limiter.limit(lambda: settings.rate_limit_token)
+async def exchange_token(
+    request: Request,
+    body: TokenRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     """Exchange authorization code for tokens and set secure cookies"""
     try:
-        token_data = await auth_service.exchange_token(request.code, request.redirect_uri, request.code_verifier)
+        token_data = await auth_service.exchange_token(body.code, body.redirect_uri, body.code_verifier)
 
         # Extract the access token
         access_token = token_data.get("access_token")
@@ -269,6 +276,7 @@ async def exchange_token(request: TokenRequest, response: Response, db: AsyncSes
 
 
 @router.post("/refresh")
+@limiter.limit(lambda: settings.rate_limit_refresh)
 async def refresh_token(request: Request, response: Response):
     """Refresh tokens using cookie-stored refresh token"""
     try:
@@ -307,8 +315,10 @@ async def refresh_token(request: Request, response: Response):
 
 
 @router.post("/dev-token", response_model=TokenResponse)
+@limiter.limit(lambda: settings.rate_limit_dev_token)
 async def get_dev_token(
-    request: DevTokenRequest,
+    request: Request,
+    body: DevTokenRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -327,8 +337,8 @@ async def get_dev_token(
         token_response = await asyncio.to_thread(
             get_keycloak_openid().token,
             grant_type="password",
-            username=request.username,
-            password=request.password,
+            username=body.username,
+            password=body.password,
             scope="openid profile email",
         )
 
