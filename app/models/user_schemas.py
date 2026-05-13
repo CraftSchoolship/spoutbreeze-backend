@@ -22,6 +22,7 @@ class UserResponse(UserBase):
     roles: str
     created_at: datetime | None = None
     is_active: bool
+    organization_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

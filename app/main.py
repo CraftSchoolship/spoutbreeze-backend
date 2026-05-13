@@ -38,6 +38,7 @@ from app.models import (  # noqa: F401
     connection_model,
     fcm_token_model,
     notification_models,
+    organization_models,
     payment_models,
     stream_session_models,
     user_models,

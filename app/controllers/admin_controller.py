@@ -1,10 +1,23 @@
-from fastapi import APIRouter, Depends
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database.session import get_db
+from app.config.logger_config import get_logger
 from app.controllers.user_controller import require_role
 from app.models.admin_schemas import AnalyticsOverview
+from app.models.organization_models import Organization, OrganizationEmailDomain
+from app.models.organization_schemas import (
+    OrganizationCreate,
+    OrganizationResponse,
+    OrganizationUpdate,
+)
 from app.services.admin_analytics_service import AdminAnalyticsService
+
+logger = get_logger("AdminController")
 
 router = APIRouter(
     prefix="/api/admin",
@@ -16,11 +29,124 @@ router = APIRouter(
 @router.get("/analytics/overview", response_model=AnalyticsOverview)
 async def get_analytics_overview(db: AsyncSession = Depends(get_db)) -> AnalyticsOverview:
     """
-    Platform-wide snapshot metrics: users, events, streaming, revenue.
-
-    Admin-only. Returns a single payload to minimize round-trips from the
-    dashboard. Values are computed live; for caching, wrap the service call
-    in ``@cached_db`` if/when load demands it.
+    Platform-wide snapshot metrics: users, events, streaming, revenue, organizations.
     """
     data = await AdminAnalyticsService.get_overview(db)
     return AnalyticsOverview.model_validate(data)
+
+
+def _serialize_org(org: Organization) -> OrganizationResponse:
+    return OrganizationResponse(
+        id=org.id,
+        name=org.name,
+        is_active=org.is_active,
+        email_domains=sorted(d.domain for d in org.email_domains),
+        created_at=org.created_at,
+        updated_at=org.updated_at,
+    )
+
+
+async def _fetch_org_or_404(db: AsyncSession, org_id: UUID) -> Organization:
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = result.scalar_one_or_none()
+    if org is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization {org_id} not found",
+        )
+    return org
+
+
+@router.post("/organizations", response_model=OrganizationResponse, status_code=status.HTTP_201_CREATED)
+async def create_organization(
+    payload: OrganizationCreate,
+    db: AsyncSession = Depends(get_db),
+) -> OrganizationResponse:
+    org = Organization(name=payload.name)
+    org.email_domains = [OrganizationEmailDomain(domain=d) for d in payload.email_domains]
+    db.add(org)
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        msg = str(e.orig).lower() if e.orig else str(e).lower()
+        if "name" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Organization name '{payload.name}' already exists.",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="One of the email domains is already claimed by another organization.",
+        ) from e
+    await db.refresh(org, attribute_names=["email_domains"])
+    return _serialize_org(org)
+
+
+@router.get("/organizations", response_model=list[OrganizationResponse])
+async def list_organizations(db: AsyncSession = Depends(get_db)) -> list[OrganizationResponse]:
+    result = await db.execute(select(Organization).order_by(Organization.name.asc()))
+    orgs = result.scalars().unique().all()
+    return [_serialize_org(o) for o in orgs]
+
+
+@router.get("/organizations/{org_id}", response_model=OrganizationResponse)
+async def get_organization(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> OrganizationResponse:
+    org = await _fetch_org_or_404(db, org_id)
+    return _serialize_org(org)
+
+
+@router.patch("/organizations/{org_id}", response_model=OrganizationResponse)
+async def update_organization(
+    org_id: UUID,
+    payload: OrganizationUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> OrganizationResponse:
+    org = await _fetch_org_or_404(db, org_id)
+
+    if payload.name is not None:
+        org.name = payload.name
+    if payload.is_active is not None:
+        org.is_active = payload.is_active
+    if payload.email_domains is not None:
+        existing = await db.execute(
+            select(OrganizationEmailDomain).where(OrganizationEmailDomain.organization_id == org_id)
+        )
+        for row in existing.scalars().all():
+            await db.delete(row)
+        await db.flush()
+        for d in payload.email_domains:
+            db.add(OrganizationEmailDomain(domain=d, organization_id=org_id))
+
+    try:
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        msg = str(e.orig).lower() if e.orig else str(e).lower()
+        if "name" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="An organization with that name already exists.",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="One of the email domains is already claimed by another organization.",
+        ) from e
+
+    await db.refresh(org, attribute_names=["email_domains"])
+    return _serialize_org(org)
+
+
+@router.delete("/organizations/{org_id}", status_code=status.HTTP_200_OK)
+async def delete_organization(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    org = await _fetch_org_or_404(db, org_id)
+    logger.info(f"Deleting organization {org.name} (id={org.id})")
+    await db.delete(org)
+    await db.commit()
+    return {"message": "Organization deleted", "statusCode": 200}

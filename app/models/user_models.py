@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.connection_model import Connection
     from app.models.fcm_token_model import FCMToken
     from app.models.notification_models import Notification, NotificationPreference
+    from app.models.organization_models import Organization
     from app.models.payment_models import Subscription
 
 
@@ -43,8 +44,17 @@ class User(Base):
     unlimited_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     has_used_free_trial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_resolution: Mapped[str | None] = mapped_column(String, nullable=True)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Relationships
+    organization: Mapped["Organization | None"] = relationship(
+        "Organization", back_populates="users", lazy="selectin"
+    )
     rtmp_endpoints: Mapped[list[RtmpEndpoint]] = relationship(
         "RtmpEndpoint", back_populates="user", cascade="all, delete-orphan"
     )

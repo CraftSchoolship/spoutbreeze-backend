@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -90,9 +91,22 @@ class RevenueStats(BaseModel):
     latest_transactions: list[RecentTransaction]
 
 
+class OrganizationStats(BaseModel):
+    id: UUID | None
+    name: str
+    user_count: int
+    active_users: int
+    events_total: int
+    bbb_meetings_total: int
+    streams_30d: int
+    active_subscriptions: int
+    revenue_30d_usd: float
+
+
 class AnalyticsOverview(BaseModel):
     generated_at: datetime
     users: UsersStats
     events: EventsStats
     streaming: StreamingStats
     revenue: RevenueStats
+    organizations: list[OrganizationStats]

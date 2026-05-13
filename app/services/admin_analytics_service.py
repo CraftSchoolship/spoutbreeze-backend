@@ -9,6 +9,7 @@ from app.config.logger_config import get_logger
 from app.models.bbb_models import BbbMeeting
 from app.models.connection_model import Connection
 from app.models.event.event_models import Event, EventStatus
+from app.models.organization_models import Organization
 from app.models.payment_models import Subscription, SubscriptionStatus, Transaction
 from app.models.stream_session_models import StreamSession, StreamSessionStatus
 from app.models.user_models import User
@@ -244,6 +245,137 @@ class AdminAnalyticsService:
             ],
         }
 
+    @staticmethod
+    async def _organizations_stats(db: AsyncSession) -> list[dict]:
+        """
+        Per-organization rollup. One row per existing Organization plus a
+        synthetic "Unassigned" row (id=None) aggregating users with
+        ``organization_id IS NULL``. Each metric is one GROUP BY query,
+        stitched in Python — matches the existing one-query-per-metric style.
+        """
+        now = utcnow()
+        d30 = now - timedelta(days=30)
+
+        orgs_rows = (await db.execute(select(Organization.id, Organization.name))).all()
+        rows: dict[object, dict] = {}
+        for org_id, name in orgs_rows:
+            rows[org_id] = {
+                "id": org_id,
+                "name": name,
+                "user_count": 0,
+                "active_users": 0,
+                "events_total": 0,
+                "bbb_meetings_total": 0,
+                "streams_30d": 0,
+                "active_subscriptions": 0,
+                "revenue_30d_usd": 0.0,
+            }
+        rows[None] = {
+            "id": None,
+            "name": "Unassigned",
+            "user_count": 0,
+            "active_users": 0,
+            "events_total": 0,
+            "bbb_meetings_total": 0,
+            "streams_30d": 0,
+            "active_subscriptions": 0,
+            "revenue_30d_usd": 0.0,
+        }
+
+        def _bucket(org_id):
+            # Orgs may have been deleted between metric queries — fall back to Unassigned.
+            return rows.get(org_id, rows[None])
+
+        user_counts = (
+            await db.execute(select(User.organization_id, func.count(User.id)).group_by(User.organization_id))
+        ).all()
+        for org_id, count in user_counts:
+            _bucket(org_id)["user_count"] = count
+
+        active_user_counts = (
+            await db.execute(
+                select(User.organization_id, func.count(User.id))
+                .where(User.is_active.is_(True))
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, count in active_user_counts:
+            _bucket(org_id)["active_users"] = count
+
+        event_counts = (
+            await db.execute(
+                select(User.organization_id, func.count(Event.id))
+                .join(User, Event.creator_id == User.id)
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, count in event_counts:
+            _bucket(org_id)["events_total"] = count
+
+        bbb_counts = (
+            await db.execute(
+                select(User.organization_id, func.count(BbbMeeting.id))
+                .join(User, BbbMeeting.user_id == User.id)
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, count in bbb_counts:
+            _bucket(org_id)["bbb_meetings_total"] = count
+
+        stream_counts = (
+            await db.execute(
+                select(User.organization_id, func.count(StreamSession.id))
+                .join(User, StreamSession.user_id == User.id)
+                .where(StreamSession.started_at >= d30)
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, count in stream_counts:
+            _bucket(org_id)["streams_30d"] = count
+
+        sub_counts = (
+            await db.execute(
+                select(User.organization_id, func.count(Subscription.id))
+                .join(User, Subscription.user_id == User.id)
+                .where(
+                    Subscription.status.in_(
+                        [SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIALING.value]
+                    )
+                )
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, count in sub_counts:
+            _bucket(org_id)["active_subscriptions"] = count
+
+        revenue_rows = (
+            await db.execute(
+                select(User.organization_id, func.coalesce(func.sum(Transaction.amount), 0.0))
+                .join(Subscription, Transaction.subscription_id == Subscription.id)
+                .join(User, Subscription.user_id == User.id)
+                .where(
+                    Transaction.created_at >= d30,
+                    Transaction.transaction_type == "payment",
+                    Transaction.status.in_(["succeeded", "paid", "complete"]),
+                )
+                .group_by(User.organization_id)
+            )
+        ).all()
+        for org_id, amount in revenue_rows:
+            _bucket(org_id)["revenue_30d_usd"] = float(amount or 0.0)
+
+        # Stable display order: real orgs A→Z, then Unassigned last.
+        out = sorted(
+            (r for k, r in rows.items() if k is not None),
+            key=lambda r: r["name"].lower(),
+        )
+        unassigned = rows[None]
+        # Only include the Unassigned row if it has any signal — keeps a clean dashboard
+        # while still surfacing the bucket the moment there are unassigned users.
+        if any(unassigned[k] for k in ("user_count", "events_total", "bbb_meetings_total", "streams_30d")):
+            out.append(unassigned)
+        return out
+
     @classmethod
     async def get_overview(cls, db: AsyncSession) -> dict:
         return {
@@ -252,4 +384,5 @@ class AdminAnalyticsService:
             "events": await cls._events_stats(db),
             "streaming": await cls._streaming_stats(db),
             "revenue": await cls._revenue_stats(db),
+            "organizations": await cls._organizations_stats(db),
         }
