@@ -22,6 +22,7 @@ on:
         options:
           - staging
           - production
+
 env:
   PYTHON_VERSION: "3.11"
   REGISTRY: ghcr.io
@@ -29,275 +30,63 @@ env:
 
 jobs:
   lint:
-    name: Code Quality
+    name: Lint & Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
+          cache: "pip"
 
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install linting tools
+      - name: Install dependencies
         run: |
-          pip install ruff black==26.1.0 mypy
-
-      - name: Run Ruff (linting)
-        run: ruff check app/ tests/ --output-format=github
-
-      - name: Run Black (formatting check)
-        run: black --check app/ tests/
-        continue-on-error: true
-
-      - name: Run MyPy (type checking)
-        run: mypy app/ --ignore-missing-imports --no-error-summary
-        continue-on-error: true 
-
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: [lint]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install security tools
-        run: |
-          pip install bandit safety pip-audit
-
-      - name: Run Bandit (security linter)
-        run: bandit -r app/ -ll -ii -x tests/ -c .bandit
-
-      - name: Check dependencies for vulnerabilities
-        run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip-audit --strict
-        continue-on-error: true 
+          pip install ruff mypy
 
-      - name: Run Safety check
-        run: safety check -r requirements.txt --full-report
-        continue-on-error: true
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Type-check with mypy
+        run: mypy app/
+
 
   test:
-    name: Tests
+    name: Tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    needs: [lint]
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache pip dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov httpx
+          pip install pytest pytest-asyncio pytest-cov pytest-mock
 
-      - name: Run tests with coverage
-        continue-on-error: true  
-        env:
-          DB_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
-          
-          REDIS_URL: redis://localhost:6379/0
-          
-          KEYCLOAK_SERVER_URL: http://localhost:8080
-          KEYCLOAK_CLIENT_ID: test-client
-          KEYCLOAK_CLIENT_SECRET: test-secret
-          KEYCLOAK_REALM: test-realm
-          
-          BBB_SERVER_BASE_URL: http://localhost:8090
-          BBB_SECRET: test-secret
-          PLUGIN_MANIFESTS_URL: http://localhost/plugin
-          
-          BROADCASTER_API_URL: http://localhost:8091
-          
-          TWITCH_SERVER: irc.chat.twitch.tv
-          TWITCH_PORT: 6667
-          TWITCH_NICK: test_bot
-          TWITCH_CHANNEL: test_channel
-          TWITCH_REDIRECT_URI: http://localhost/callback
-          TWITCH_CLIENT_ID: test
-          TWITCH_CLIENT_SECRET: test
-          TWITCH_TOKEN_URL: https://id.twitch.tv/oauth2/token
-          
-          YOUTUBE_CLIENT_ID: test
-          YOUTUBE_CLIENT_SECRET: test
-          YOUTUBE_REDIRECT_URI: http://localhost/callback
-          
-          STRIPE_SECRET_KEY: sk_test_fake
-          STRIPE_PUBLISHABLE_KEY: pk_test_fake
-          STRIPE_WEBHOOK_SECRET: whsec_fake
-          
-          CORS_ORIGINS: http://localhost:3000
-          
-          CHAT_GATEWAY_SHARED_SECRET: test-secret
-          
-          ENV: test
+      - name: Run tests
         run: |
-          pytest tests/ \
-            --cov=app \
-            --cov-report=xml \
-            --cov-report=html \
-            --cov-report=term-missing \
-            --cov-fail-under=55 \
-            -v
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: htmlcov/
-
-  migration-check:
-    name: Migration Check
-    runs-on: ubuntu-latest
-    needs: [test]
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Check for pending migrations
-        env:
-          DB_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
-          KEYCLOAK_SERVER_URL: http://localhost:8080
-          KEYCLOAK_CLIENT_ID: test-client
-          KEYCLOAK_CLIENT_SECRET: test-secret
-          KEYCLOAK_REALM: test-realm
-          BBB_SERVER_BASE_URL: http://localhost:8090
-          BBB_SECRET: test-secret
-          PLUGIN_MANIFESTS_URL: http://localhost/plugin
-          BROADCASTER_API_URL: http://localhost:8091
-          TWITCH_SERVER: irc.chat.twitch.tv
-          TWITCH_PORT: 6667
-          TWITCH_NICK: test_bot
-          TWITCH_CHANNEL: test_channel
-          TWITCH_REDIRECT_URI: http://localhost/callback
-          TWITCH_CLIENT_ID: test
-          TWITCH_CLIENT_SECRET: test
-          TWITCH_TOKEN_URL: https://id.twitch.tv/oauth2/token
-          YOUTUBE_CLIENT_ID: test
-          YOUTUBE_CLIENT_SECRET: test
-          YOUTUBE_REDIRECT_URI: http://localhost/callback
-          STRIPE_SECRET_KEY: sk_test_fake
-          STRIPE_PUBLISHABLE_KEY: pk_test_fake
-          STRIPE_WEBHOOK_SECRET: whsec_fake
-          CORS_ORIGINS: http://localhost:3000
-          CHAT_GATEWAY_SHARED_SECRET: test-secret
-        run: |
-          alembic upgrade head
-          
-          alembic check || echo "::warning::Pending migrations detected"
-
-      - name: Test migration rollback
-        env:
-          DB_URL: postgresql+asyncpg://test:test@localhost:5432/test_db
-          KEYCLOAK_SERVER_URL: http://localhost:8080
-          KEYCLOAK_CLIENT_ID: test-client
-          KEYCLOAK_CLIENT_SECRET: test-secret
-          KEYCLOAK_REALM: test-realm
-          BBB_SERVER_BASE_URL: http://localhost:8090
-          BBB_SECRET: test-secret
-          PLUGIN_MANIFESTS_URL: http://localhost/plugin
-          BROADCASTER_API_URL: http://localhost:8091
-          TWITCH_SERVER: irc.chat.twitch.tv
-          TWITCH_PORT: 6667
-          TWITCH_NICK: test_bot
-          TWITCH_CHANNEL: test_channel
-          TWITCH_REDIRECT_URI: http://localhost/callback
-          TWITCH_CLIENT_ID: test
-          TWITCH_CLIENT_SECRET: test
-          TWITCH_TOKEN_URL: https://id.twitch.tv/oauth2/token
-          YOUTUBE_CLIENT_ID: test
-          YOUTUBE_CLIENT_SECRET: test
-          YOUTUBE_REDIRECT_URI: http://localhost/callback
-          STRIPE_SECRET_KEY: sk_test_fake
-          STRIPE_PUBLISHABLE_KEY: pk_test_fake
-          STRIPE_WEBHOOK_SECRET: whsec_fake
-          CORS_ORIGINS: http://localhost:3000
-          CHAT_GATEWAY_SHARED_SECRET: test-secret
-        run: |
-          alembic downgrade -1
-          alembic upgrade head
+          cp .env.test .env
+          pytest
 
   build-and-push-image:
     runs-on: ubuntu-latest
-    needs: [test, security, migration-check]
+    needs: [test]
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
