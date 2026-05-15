@@ -27,13 +27,9 @@ class Organization(Base):
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.now, onupdate=datetime.now, nullable=False
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
-    users: Mapped[list[User]] = relationship(
-        "User", back_populates="organization", passive_deletes=True
-    )
+    users: Mapped[list[User]] = relationship("User", back_populates="organization", passive_deletes=True)
     email_domains: Mapped[list[OrganizationEmailDomain]] = relationship(
         "OrganizationEmailDomain",
         back_populates="organization",

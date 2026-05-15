@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,7 @@ from app.models.organization_schemas import (
     OrganizationResponse,
     OrganizationUpdate,
 )
-from app.services.admin_analytics_service import AdminAnalyticsService
+from app.services.admin_analytics_service import UNASSIGNED, AdminAnalyticsService, OrgFilter
 
 logger = get_logger("AdminController")
 
@@ -27,11 +27,38 @@ router = APIRouter(
 
 
 @router.get("/analytics/overview", response_model=AnalyticsOverview)
-async def get_analytics_overview(db: AsyncSession = Depends(get_db)) -> AnalyticsOverview:
+async def get_analytics_overview(
+    organization_id: str | None = Query(
+        None,
+        description=(
+            "Optional org scope for users/events/streaming/revenue metrics. "
+            "Pass a UUID to scope to that organization, or 'unassigned' for "
+            "users with no organization. Omit for the platform-wide view. "
+            "The organizations rollup is always platform-wide."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> AnalyticsOverview:
     """
-    Platform-wide snapshot metrics: users, events, streaming, revenue, organizations.
+    Snapshot metrics: users, events, streaming, revenue, organizations.
+
+    Per-tab metrics can be scoped by ``organization_id``. The
+    ``organizations`` rollup ignores the filter — it is the breakdown view.
     """
-    data = await AdminAnalyticsService.get_overview(db)
+    org_filter: OrgFilter = None
+    if organization_id is not None:
+        if organization_id == UNASSIGNED:
+            org_filter = UNASSIGNED
+        else:
+            try:
+                org_filter = UUID(organization_id)
+            except ValueError as e:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"organization_id must be a UUID or '{UNASSIGNED}'",
+                ) from e
+
+    data = await AdminAnalyticsService.get_overview(db, org_filter)
     return AnalyticsOverview.model_validate(data)
 
 
@@ -112,9 +139,7 @@ async def update_organization(
     if payload.is_active is not None:
         org.is_active = payload.is_active
     if payload.email_domains is not None:
-        existing = await db.execute(
-            select(OrganizationEmailDomain).where(OrganizationEmailDomain.organization_id == org_id)
-        )
+        existing = await db.execute(select(OrganizationEmailDomain).where(OrganizationEmailDomain.organization_id == org_id))
         for row in existing.scalars().all():
             await db.delete(row)
         await db.flush()

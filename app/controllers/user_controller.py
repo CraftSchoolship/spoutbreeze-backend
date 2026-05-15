@@ -236,8 +236,7 @@ async def delete_user_by_admin(
         )
 
     logger.info(
-        f"[{request_id}] Super admin {current_user.username} deleting user "
-        f"{target_user.username} (ID: {target_user.id})"
+        f"[{request_id}] Super admin {current_user.username} deleting user {target_user.username} (ID: {target_user.id})"
     )
 
     try:

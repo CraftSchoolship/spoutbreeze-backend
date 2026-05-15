@@ -52,9 +52,7 @@ class User(Base):
     )
 
     # Relationships
-    organization: Mapped["Organization | None"] = relationship(
-        "Organization", back_populates="users", lazy="selectin"
-    )
+    organization: Mapped[Organization | None] = relationship("Organization", back_populates="users", lazy="selectin")
     rtmp_endpoints: Mapped[list[RtmpEndpoint]] = relationship(
         "RtmpEndpoint", back_populates="user", cascade="all, delete-orphan"
     )

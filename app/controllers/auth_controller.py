@@ -190,9 +190,7 @@ async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncS
         # so this lookup never runs in the `else` (existing user) branch.
         domain = email.rpartition("@")[-1].strip().lower()
         if domain:
-            domain_row = await db.execute(
-                select(OrganizationEmailDomain).where(OrganizationEmailDomain.domain == domain)
-            )
+            domain_row = await db.execute(select(OrganizationEmailDomain).where(OrganizationEmailDomain.domain == domain))
             match = domain_row.scalar_one_or_none()
             if match:
                 new_user.organization_id = match.organization_id
