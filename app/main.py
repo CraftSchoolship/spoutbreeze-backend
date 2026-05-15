@@ -27,6 +27,7 @@ from app.controllers.facebook_stream_controller import router as facebook_stream
 from app.controllers.health_controller import router as health_router
 from app.controllers.internal_controller import router as internal_router
 from app.controllers.notification_controller import router as notification_router
+from app.controllers.org_admin_controller import router as org_admin_router
 from app.controllers.payment_controller import router as payment_router
 from app.controllers.rtmp_controller import router as stream_router
 from app.controllers.twitch_controller import router as twitch_router
@@ -290,3 +291,4 @@ app.include_router(facebook_stream_router)
 app.include_router(payment_router)
 app.include_router(notification_router)
 app.include_router(admin_router)
+app.include_router(org_admin_router)
