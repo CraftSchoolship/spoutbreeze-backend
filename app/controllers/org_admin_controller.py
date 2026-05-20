@@ -101,13 +101,9 @@ def _serialize_org(org: Organization) -> OrganizationResponse:
                 domain=d.domain,
                 verified=verified,
                 verified_at=d.verified_at,
-                verification_record_name=(
-                    None if verified else verification_record_name(d.domain)
-                ),
+                verification_record_name=(None if verified else verification_record_name(d.domain)),
                 verification_record_value=(
-                    None
-                    if verified or not d.verification_token
-                    else verification_record_value(d.verification_token)
+                    None if verified or not d.verification_token else verification_record_value(d.verification_token)
                 ),
             )
         )
@@ -267,9 +263,7 @@ def _serialize_invite(inv: OrganizationInvite) -> OrganizationInviteResponse:
     )
 
 
-async def _active_invite_for_org(
-    db: AsyncSession, org_id: UUID
-) -> OrganizationInvite | None:
+async def _active_invite_for_org(db: AsyncSession, org_id: UUID) -> OrganizationInvite | None:
     """Find the (single) currently-active invite for an org, if any."""
     now = utcnow()
     result = await db.execute(
@@ -323,10 +317,7 @@ async def create_my_organization(
     if current_user.organization_id is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "You already belong to an organization. Leave or be reassigned "
-                "before creating a new one."
-            ),
+            detail=("You already belong to an organization. Leave or be reassigned before creating a new one."),
         )
 
     # Step 1: Promote the caller to `admin` in Keycloak FIRST. If this fails,
@@ -334,12 +325,9 @@ async def create_my_organization(
     # auth_service raises HTTPException on failure which propagates as-is to
     # the client (typically a 500 with the Keycloak error detail).
     logger.info(
-        f"[{request_id}] Granting 'admin' role in Keycloak for {current_user.username} "
-        f"before creating org '{payload.name}'"
+        f"[{request_id}] Granting 'admin' role in Keycloak for {current_user.username} before creating org '{payload.name}'"
     )
-    await auth_service.update_user_role(
-        user_id=current_user.keycloak_id, new_role="admin"
-    )
+    await auth_service.update_user_role(user_id=current_user.keycloak_id, new_role="admin")
 
     # Step 2: Atomic DB transaction — org + domain + invite + user mutations
     # all commit together. If anything fails here we still have the Keycloak
@@ -395,9 +383,7 @@ async def create_my_organization(
     # role + org assignment. Best-effort; a Redis blip can't roll back the
     # successful commit above.
     try:
-        await user_service_cached.invalidate_user_cache(
-            target_user.id, target_user.keycloak_id
-        )
+        await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
     except Exception as e:
         logger.warning(f"[{request_id}] Cache invalidation after org create failed: {e}")
 
@@ -420,8 +406,7 @@ async def create_my_organization(
             )
 
     logger.info(
-        f"[{request_id}] User {target_user.username} created org '{org.name}' "
-        f"with pending domain {payload.email_domain}"
+        f"[{request_id}] User {target_user.username} created org '{org.name}' with pending domain {payload.email_domain}"
     )
 
     return CreateMyOrgResponse(
@@ -456,16 +441,10 @@ async def join_my_organization(
             detail="You already belong to an organization. Switch is not supported here.",
         )
 
-    invite_result = await db.execute(
-        select(OrganizationInvite).where(OrganizationInvite.code == payload.code)
-    )
+    invite_result = await db.execute(select(OrganizationInvite).where(OrganizationInvite.code == payload.code))
     invite = invite_result.scalar_one_or_none()
     now = utcnow()
-    if (
-        invite is None
-        or invite.revoked_at is not None
-        or (invite.expires_at is not None and invite.expires_at <= now)
-    ):
+    if invite is None or invite.revoked_at is not None or (invite.expires_at is not None and invite.expires_at <= now):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invite code is invalid or has expired.",
@@ -485,16 +464,11 @@ async def join_my_organization(
     await db.commit()
 
     try:
-        await user_service_cached.invalidate_user_cache(
-            target_user.id, target_user.keycloak_id
-        )
+        await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
     except Exception as e:
         logger.warning(f"[{request_id}] Cache invalidation after org join failed: {e}")
 
-    logger.info(
-        f"[{request_id}] User {target_user.username} joined org '{org.name}' "
-        f"via invite {invite.code}"
-    )
+    logger.info(f"[{request_id}] User {target_user.username} joined org '{org.name}' via invite {invite.code}")
     return JoinOrgResponse(organization=_serialize_org(org))
 
 
@@ -515,9 +489,7 @@ async def skip_onboarding(
         target_user.has_completed_onboarding = True
         await db.commit()
         try:
-            await user_service_cached.invalidate_user_cache(
-                target_user.id, target_user.keycloak_id
-            )
+            await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
         except Exception as e:
             logger.warning(f"Cache invalidation after skip-onboarding failed: {e}")
     return {"message": "Onboarding skipped", "statusCode": 200}
@@ -584,11 +556,14 @@ async def get_my_organization_invite(
     db: AsyncSession = Depends(get_db),
 ) -> OrganizationInviteResponse:
     """Return the current active invite for the caller's org, creating one on demand."""
-    invite = await _active_invite_for_org(db, current_user.organization_id)
+    # require_org_admin guarantees organization_id is set; narrow for mypy.
+    assert current_user.organization_id is not None
+    org_id = current_user.organization_id
+    invite = await _active_invite_for_org(db, org_id)
     if invite is None:
         invite = OrganizationInvite(
             code=_new_invite_code(),
-            organization_id=current_user.organization_id,
+            organization_id=org_id,
             created_by_user_id=current_user.id,
         )
         db.add(invite)
@@ -603,14 +578,17 @@ async def rotate_my_organization_invite(
     db: AsyncSession = Depends(get_db),
 ) -> OrganizationInviteResponse:
     """Revoke the current invite (if any) and create a new one."""
+    # require_org_admin guarantees organization_id is set; narrow for mypy.
+    assert current_user.organization_id is not None
+    org_id = current_user.organization_id
     now = utcnow()
-    existing = await _active_invite_for_org(db, current_user.organization_id)
+    existing = await _active_invite_for_org(db, org_id)
     if existing is not None:
         existing.revoked_at = now
 
     new_invite = OrganizationInvite(
         code=_new_invite_code(),
-        organization_id=current_user.organization_id,
+        organization_id=org_id,
         created_by_user_id=current_user.id,
     )
     db.add(new_invite)
@@ -774,7 +752,6 @@ async def delete_my_organization_domain(
     await db.delete(row)
     await db.commit()
     logger.info(
-        f"Org admin {current_user.username} removed domain {normalized} from "
-        f"organization {current_user.organization_id}"
+        f"Org admin {current_user.username} removed domain {normalized} from organization {current_user.organization_id}"
     )
     return {"message": f"Domain '{normalized}' removed.", "statusCode": 200}

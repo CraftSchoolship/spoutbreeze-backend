@@ -40,9 +40,7 @@ async def verify_domain_record(domain: str, expected_token: str) -> bool:
     record_name = verification_record_name(domain)
     expected_value = verification_record_value(expected_token)
     try:
-        answer = await dns.asyncresolver.resolve(
-            record_name, "TXT", lifetime=_DNS_TIMEOUT_SECONDS
-        )
+        answer = await dns.asyncresolver.resolve(record_name, "TXT", lifetime=_DNS_TIMEOUT_SECONDS)
     except dns.exception.DNSException as e:
         logger.info(f"DNS verification miss for {record_name}: {e.__class__.__name__}")
         return False

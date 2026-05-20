@@ -103,10 +103,7 @@ async def create_organization(
     # Super-admin-created domains are server-trusted — mark verified immediately.
     now = utcnow()
     org = Organization(name=payload.name)
-    org.email_domains = [
-        OrganizationEmailDomain(domain=d, verified_at=now)
-        for d in payload.email_domains
-    ]
+    org.email_domains = [OrganizationEmailDomain(domain=d, verified_at=now) for d in payload.email_domains]
     db.add(org)
     try:
         await db.commit()
@@ -161,11 +158,7 @@ async def update_organization(
         await db.flush()
         verified_at = utcnow()
         for d in payload.email_domains:
-            db.add(
-                OrganizationEmailDomain(
-                    domain=d, organization_id=org_id, verified_at=verified_at
-                )
-            )
+            db.add(OrganizationEmailDomain(domain=d, organization_id=org_id, verified_at=verified_at))
 
     try:
         await db.commit()

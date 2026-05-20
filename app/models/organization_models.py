@@ -87,6 +87,5 @@ class OrganizationInvite(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<OrganizationInvite(code={self.code!r}, org_id={self.organization_id!r}, "
-            f"revoked={self.revoked_at is not None})>"
+            f"<OrganizationInvite(code={self.code!r}, org_id={self.organization_id!r}, revoked={self.revoked_at is not None})>"
         )
