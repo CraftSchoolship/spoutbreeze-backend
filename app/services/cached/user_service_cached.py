@@ -43,11 +43,19 @@ class UserServiceCached:
         return list(res.scalars().all())  # Convert to list for serialization
 
     async def invalidate_user_cache(self, user_id: UUID, keycloak_id: str | None = None):
-        """Invalidate all caches for a specific user"""
-        await cache.delete_pattern(f"user_profile:*{user_id}*")
-        await cache.delete_pattern(f"user_roles:*{user_id}*")
+        """Invalidate all caches for a specific user.
+
+        ``cached_db`` builds keys as ``{prefix}:{func_name}:{md5(args)}`` —
+        the user_id / keycloak_id never appears literally in the key, so a
+        substring pattern like ``user_profile:*<user_id>*`` matches nothing.
+        Dropping the whole prefix is the only correct option. With a small
+        user count this is fine; even at scale the 15-min TTL bounds the
+        cost of re-warming.
+        """
+        await cache.delete_pattern("user_profile:*")
+        await cache.delete_pattern("user_roles:*")
         if keycloak_id:
-            await cache.delete_pattern(f"user_keycloak:*{keycloak_id}*")
+            await cache.delete_pattern("user_keycloak:*")
         await cache.delete_pattern("users_list:*")
         logger.info(f"Invalidated user caches for {user_id}")
 
