@@ -11,11 +11,13 @@ from app.controllers.user_controller import require_role
 from app.models.admin_schemas import AnalyticsOverview
 from app.models.organization_models import Organization, OrganizationEmailDomain
 from app.models.organization_schemas import (
+    EmailDomainDetail,
     OrganizationCreate,
     OrganizationResponse,
     OrganizationUpdate,
 )
 from app.services.admin_analytics_service import UNASSIGNED, AdminAnalyticsService, OrgFilter
+from app.utils.datetime_utils import utcnow
 
 logger = get_logger("AdminController")
 
@@ -63,11 +65,20 @@ async def get_analytics_overview(
 
 
 def _serialize_org(org: Organization) -> OrganizationResponse:
+    details = [
+        EmailDomainDetail(
+            domain=d.domain,
+            verified=d.verified_at is not None,
+            verified_at=d.verified_at,
+        )
+        for d in sorted(org.email_domains, key=lambda x: x.domain)
+    ]
     return OrganizationResponse(
         id=org.id,
         name=org.name,
         is_active=org.is_active,
-        email_domains=sorted(d.domain for d in org.email_domains),
+        email_domains=[d.domain for d in details],
+        email_domain_details=details,
         created_at=org.created_at,
         updated_at=org.updated_at,
     )
@@ -89,8 +100,13 @@ async def create_organization(
     payload: OrganizationCreate,
     db: AsyncSession = Depends(get_db),
 ) -> OrganizationResponse:
+    # Super-admin-created domains are server-trusted — mark verified immediately.
+    now = utcnow()
     org = Organization(name=payload.name)
-    org.email_domains = [OrganizationEmailDomain(domain=d) for d in payload.email_domains]
+    org.email_domains = [
+        OrganizationEmailDomain(domain=d, verified_at=now)
+        for d in payload.email_domains
+    ]
     db.add(org)
     try:
         await db.commit()
@@ -143,8 +159,13 @@ async def update_organization(
         for row in existing.scalars().all():
             await db.delete(row)
         await db.flush()
+        verified_at = utcnow()
         for d in payload.email_domains:
-            db.add(OrganizationEmailDomain(domain=d, organization_id=org_id))
+            db.add(
+                OrganizationEmailDomain(
+                    domain=d, organization_id=org_id, verified_at=verified_at
+                )
+            )
 
     try:
         await db.commit()
