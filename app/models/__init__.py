@@ -3,6 +3,11 @@ from app.models.bbb_models import BbbMeeting
 from app.models.channel.channels_model import Channel
 from app.models.connection_model import Connection
 from app.models.event.event_models import Event
+from app.models.organization_models import (
+    Organization,
+    OrganizationEmailDomain,
+    OrganizationInvite,
+)
 from app.models.stream_models import RtmpEndpoint
 from app.models.stream_session_models import StreamSession
 from app.models.user_models import User
@@ -16,5 +21,8 @@ __all__ = [
     "RtmpEndpoint",
     "BbbMeeting",
     "Connection",
+    "Organization",
+    "OrganizationEmailDomain",
+    "OrganizationInvite",
     "StreamSession",
 ]

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.database.session import get_db
 from app.config.logger_config import logger
+from app.config.redis_config import cache
 from app.config.settings import get_keycloak_openid, get_settings
 from app.controllers.user_controller import get_current_user
 from app.models.auth_models import (
@@ -21,6 +22,7 @@ from app.models.auth_models import (
     TokenRequest,
     TokenResponse,
 )
+from app.models.organization_models import OrganizationEmailDomain
 from app.models.user_models import User
 from app.services.auth_service import AuthService
 from app.utils.rate_limit import limiter
@@ -171,10 +173,11 @@ async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncS
 
     if not existing_user:
         # Create a new user in the database
+        email = str(user_info.get("email", ""))
         new_user = User(
             keycloak_id=str(keycloak_id),
             username=str(user_info.get("preferred_username", "")),
-            email=str(user_info.get("email", "")),
+            email=email,
             first_name=str(user_info.get("given_name", "")),
             last_name=str(user_info.get("family_name", "")),
         )
@@ -182,12 +185,37 @@ async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncS
         if user_roles is not None:
             new_user.set_roles_list(user_roles)
 
+        # Auto-assign organization by email domain (first login only) — but
+        # ONLY against verified domains. Self-serve org claims that haven't
+        # cleared the DNS check don't pull in unrelated signups.
+        domain = email.rpartition("@")[-1].strip().lower()
+        if domain:
+            domain_row = await db.execute(
+                select(OrganizationEmailDomain).where(
+                    OrganizationEmailDomain.domain == domain,
+                    OrganizationEmailDomain.verified_at.is_not(None),
+                )
+            )
+            match = domain_row.scalar_one_or_none()
+            if match:
+                new_user.organization_id = match.organization_id
+                # Domain match counts as completed onboarding — they don't
+                # need to see /onboarding because they're already placed.
+                new_user.has_completed_onboarding = True
+                logger.info(
+                    f"Auto-assigned new user {new_user.username} to organization {match.organization_id} via verified domain {domain}"
+                )
+
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
         logger.info(
             f"New user created: {new_user.username}, with keycloak ID: {new_user.keycloak_id}, roles: {new_user.roles}"
         )
+        try:
+            await cache.delete_pattern("users_list:*")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate users_list cache after new signup: {e}")
         return new_user
     else:
         # Update the existing user information

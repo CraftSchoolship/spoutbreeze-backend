@@ -12,6 +12,8 @@ from app.config.database.session import get_db
 from app.config.logger_config import logger
 from app.config.redis_config import cache
 from app.config.settings import get_settings
+from app.models.organization_models import Organization
+from app.models.organization_schemas import AssignUserOrganizationRequest
 from app.models.user_models import User
 from app.models.user_schemas import (
     UpdateProfileRequest,
@@ -195,6 +197,89 @@ async def get_user_by_id(
         )
 
 
+@router.delete("/users/{user_id}")
+async def delete_user_by_admin(
+    user_id: UUID = Path(..., title="The ID of the user to delete"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(require_role("super_admin")),
+):
+    """
+    Permanently delete a user (Super Admin only).
+
+    Mirrors the self-delete flow in DELETE /me:
+    1. Cancel any active Stripe subscription (best-effort)
+    2. Delete the user from Keycloak
+    3. Delete the user and all related data from the database (cascade)
+    4. Invalidate user caches
+    """
+    request_id = str(uuid.uuid4())
+
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account from the admin panel. Use account settings instead.",
+        )
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    if "super_admin" in target_user.get_roles_list():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete another super admin.",
+        )
+
+    logger.info(
+        f"[{request_id}] Super admin {current_user.username} deleting user {target_user.username} (ID: {target_user.id})"
+    )
+
+    try:
+        try:
+            from app.services.payment_service import PaymentService
+
+            subscription = await PaymentService.get_user_subscription(target_user, db)
+            if subscription and subscription.stripe_subscription_id:
+                import stripe
+
+                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                logger.info(f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}")
+        except Exception as e:
+            logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
+
+        if target_user.keycloak_id:
+            await auth_service.delete_user(target_user.keycloak_id)
+            logger.info(f"[{request_id}] Deleted user {target_user.keycloak_id} from Keycloak")
+
+        target_keycloak_id = target_user.keycloak_id
+        await db.delete(target_user)
+        await db.commit()
+        logger.info(f"[{request_id}] Deleted user {user_id} from database")
+
+        try:
+            await user_service_cached.invalidate_user_cache(user_id, target_keycloak_id)
+        except Exception as e:
+            logger.warning(f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}")
+
+        return {"message": "User deleted successfully", "statusCode": 200}
+
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"[{request_id}] Unexpected error during user deletion: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete user. Please try again or contact support.",
+        )
+
+
 @router.put("/users/{user_id}/role", response_model=UserResponse)
 async def update_user_role(
     role_data: UpdateUserRoleRequest,
@@ -275,6 +360,53 @@ async def update_user_role(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update user role",
         )
+
+
+@router.patch("/users/{user_id}/organization", response_model=UserResponse)
+async def assign_user_organization(
+    payload: AssignUserOrganizationRequest,
+    user_id: UUID = Path(..., title="The ID of the user to update"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: bool = Depends(require_role("super_admin")),
+):
+    """
+    Assign or unassign a user's organization (Super Admin only).
+
+    Body: {"organization_id": "<uuid>" | null}
+    """
+    request_id = str(uuid.uuid4())
+
+    target_result = await db.execute(select(User).where(User.id == user_id))
+    target_user = target_result.scalar_one_or_none()
+    if target_user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found",
+        )
+
+    if payload.organization_id is not None:
+        org_result = await db.execute(select(Organization).where(Organization.id == payload.organization_id))
+        if org_result.scalar_one_or_none() is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Organization {payload.organization_id} not found",
+            )
+
+    target_user.organization_id = payload.organization_id
+    await db.commit()
+    await db.refresh(target_user)
+
+    try:
+        await user_service_cached.invalidate_user_cache(user_id, target_user.keycloak_id)
+    except Exception as e:
+        logger.warning(f"[{request_id}] Failed to invalidate caches after org change: {e}")
+
+    logger.info(
+        f"[{request_id}] Super admin {current_user.username} set user {target_user.username} "
+        f"organization_id to {payload.organization_id}"
+    )
+    return target_user
 
 
 # Add cache management endpoints for admin users
