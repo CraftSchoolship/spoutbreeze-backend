@@ -43,6 +43,7 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     unlimited_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     has_used_free_trial: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    has_completed_onboarding: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     default_resolution: Mapped[str | None] = mapped_column(String, nullable=True)
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

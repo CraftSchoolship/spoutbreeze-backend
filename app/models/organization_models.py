@@ -51,8 +51,42 @@ class OrganizationEmailDomain(Base):
         nullable=False,
         index=True,
     )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verification_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    verification_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     organization: Mapped[Organization] = relationship("Organization", back_populates="email_domains")
 
     def __repr__(self) -> str:
-        return f"<OrganizationEmailDomain(domain={self.domain!r}, org_id={self.organization_id!r})>"
+        return (
+            f"<OrganizationEmailDomain(domain={self.domain!r}, "
+            f"org_id={self.organization_id!r}, verified={self.verified_at is not None})>"
+        )
+
+
+class OrganizationInvite(Base):
+    __tablename__ = "organization_invites"
+
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    organization: Mapped[Organization] = relationship("Organization")
+
+    def __repr__(self) -> str:
+        return (
+            f"<OrganizationInvite(code={self.code!r}, org_id={self.organization_id!r}, "
+            f"revoked={self.revoked_at is not None})>"
+        )
