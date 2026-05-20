@@ -23,6 +23,7 @@ class UserResponse(UserBase):
     created_at: datetime | None = None
     is_active: bool
     organization_id: UUID | None = None
+    has_completed_onboarding: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
