@@ -185,17 +185,25 @@ async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncS
         if user_roles is not None:
             new_user.set_roles_list(user_roles)
 
-        # Auto-assign organization by email domain (first login only).
-        # Manual reassignments by super-admin must persist on subsequent logins,
-        # so this lookup never runs in the `else` (existing user) branch.
+        # Auto-assign organization by email domain (first login only) — but
+        # ONLY against verified domains. Self-serve org claims that haven't
+        # cleared the DNS check don't pull in unrelated signups.
         domain = email.rpartition("@")[-1].strip().lower()
         if domain:
-            domain_row = await db.execute(select(OrganizationEmailDomain).where(OrganizationEmailDomain.domain == domain))
+            domain_row = await db.execute(
+                select(OrganizationEmailDomain).where(
+                    OrganizationEmailDomain.domain == domain,
+                    OrganizationEmailDomain.verified_at.is_not(None),
+                )
+            )
             match = domain_row.scalar_one_or_none()
             if match:
                 new_user.organization_id = match.organization_id
+                # Domain match counts as completed onboarding — they don't
+                # need to see /onboarding because they're already placed.
+                new_user.has_completed_onboarding = True
                 logger.info(
-                    f"Auto-assigned new user {new_user.username} to organization {match.organization_id} via domain {domain}"
+                    f"Auto-assigned new user {new_user.username} to organization {match.organization_id} via verified domain {domain}"
                 )
 
         db.add(new_user)
