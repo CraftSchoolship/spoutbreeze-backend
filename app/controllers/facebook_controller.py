@@ -107,6 +107,7 @@ async def facebook_callback(
                     token_data=page_token_data,
                     scopes=FACEBOOK_SCOPES,
                     provider_user_id=page_id,
+                    display_name=page_name or None,
                 )
                 logger.info(f"[Facebook] Page '{page_name}' ({page_id}) saved for {current_user.id}")
         except Exception as e:
@@ -171,6 +172,7 @@ async def facebook_pages(
         "pages": [
             {
                 "page_id": p.provider_user_id,
+                "page_name": p.display_name,
                 "is_active": p.is_active,
                 "is_expired": p.is_expired,
                 "created_at": p.created_at.isoformat() if p.created_at else None,

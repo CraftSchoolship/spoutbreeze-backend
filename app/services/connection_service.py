@@ -68,6 +68,7 @@ class ConnectionService:
         token_data: dict,
         scopes: list[str],
         provider_user_id: str | None = None,
+        display_name: str | None = None,
     ) -> Connection:
         """Create or update a platform connection (upsert)."""
 
@@ -101,6 +102,8 @@ class ConnectionService:
             existing.revoked_at = None  # Re-activate if it was revoked
             if provider_user_id is not None:
                 existing.provider_user_id = provider_user_id
+            if display_name is not None:
+                existing.display_name = display_name
             await db.commit()
             logger.info(f"[{provider}] Connection updated for user {user_id}")
             return existing
@@ -110,6 +113,7 @@ class ConnectionService:
             user_id=user_id,
             provider=provider,
             provider_user_id=provider_user_id,
+            display_name=display_name,
             access_token=encrypted_access,
             refresh_token=encrypted_refresh,
             scopes=json.dumps(scopes),
