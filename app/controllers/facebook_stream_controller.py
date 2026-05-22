@@ -62,6 +62,7 @@ async def facebook_pages(
         "pages": [
             {
                 "page_id": p.provider_user_id,
+                "page_name": p.display_name,
                 "is_active": p.is_active,
             }
             for p in pages
