@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.channel.channels_model import Channel
 from app.models.channel.channels_schemas import ChannelCreate, ChannelUpdate
 from app.models.event.event_models import Event, EventStatus
+from app.models.organization_models import Organization
 from app.models.user_models import User
 from app.services.channels_service import ChannelsService
 
@@ -66,8 +67,58 @@ async def test_get_channel_by_id_found_and_not_found(db_session: AsyncSession, t
 
 
 @pytest.mark.anyio
-async def test_get_channels_all(db_session: AsyncSession, test_user: User):
-    # Seed channels for two users
+async def test_get_channels_scoped_to_organization(db_session: AsyncSession, test_user: User):
+    org = Organization(id=uuid.uuid4(), name=f"org-{uuid.uuid4()}")
+    db_session.add(org)
+    await db_session.commit()
+
+    test_user.organization_id = org.id
+    same_org_user = User(
+        id=uuid.uuid4(),
+        keycloak_id=f"kc-{uuid.uuid4()}",
+        username=f"same-{uuid.uuid4()}",
+        email=f"same-{uuid.uuid4()}@example.com",
+        first_name="Same",
+        last_name="Org",
+        organization_id=org.id,
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    outsider = User(
+        id=uuid.uuid4(),
+        keycloak_id=f"kc-{uuid.uuid4()}",
+        username=f"out-{uuid.uuid4()}",
+        email=f"out-{uuid.uuid4()}@example.com",
+        first_name="Out",
+        last_name="Sider",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    db_session.add_all([same_org_user, outsider])
+    await db_session.commit()
+
+    for owner in (test_user, same_org_user, outsider):
+        db_session.add(
+            Channel(
+                id=uuid.uuid4(),
+                name=f"ch-{uuid.uuid4()}",
+                creator_id=owner.id,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+        )
+    await db_session.commit()
+
+    svc = ChannelsService()
+    out = await svc.get_channels(db_session, user_id=test_user.id, organization_id=org.id)
+    creator_ids = {c.creator_id for c in out}
+    assert test_user.id in creator_ids
+    assert same_org_user.id in creator_ids
+    assert outsider.id not in creator_ids
+
+
+@pytest.mark.anyio
+async def test_get_channels_without_org_returns_only_own(db_session: AsyncSession, test_user: User):
     other = User(
         id=uuid.uuid4(),
         keycloak_id=f"kc-{uuid.uuid4()}",
@@ -85,7 +136,7 @@ async def test_get_channels_all(db_session: AsyncSession, test_user: User):
         db_session.add(
             Channel(
                 id=uuid.uuid4(),
-                name=f"ch-all-{uuid.uuid4()}",
+                name=f"ch-{uuid.uuid4()}",
                 creator_id=owner.id,
                 created_at=datetime.now(),
                 updated_at=datetime.now(),
@@ -94,8 +145,9 @@ async def test_get_channels_all(db_session: AsyncSession, test_user: User):
     await db_session.commit()
 
     svc = ChannelsService()
-    out = await svc.get_channels(db_session)
-    assert isinstance(out, list) and len(out) >= 2
+    out = await svc.get_channels(db_session, user_id=test_user.id, organization_id=None)
+    creator_ids = {c.creator_id for c in out}
+    assert creator_ids == {test_user.id}
 
 
 @pytest.mark.anyio
