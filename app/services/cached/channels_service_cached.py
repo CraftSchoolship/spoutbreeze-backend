@@ -19,8 +19,13 @@ settings = get_settings()
 
 class ChannelsServiceCached(ChannelsService):
     @cached_db(ttl=settings.cache_ttl_medium, key_prefix="channels_all")
-    async def get_channels(self, db: AsyncSession) -> list[ChannelResponse]:
-        return await super().get_channels(db)
+    async def get_channels(
+        self,
+        db: AsyncSession,
+        user_id: UUID,
+        organization_id: UUID | None,
+    ) -> list[ChannelResponse]:
+        return await super().get_channels(db, user_id, organization_id)
 
     @cached_db(ttl=settings.cache_ttl_medium, key_prefix="channels_user")
     async def get_channels_by_user_id(self, db: AsyncSession, user_id: UUID) -> list[ChannelResponse]:

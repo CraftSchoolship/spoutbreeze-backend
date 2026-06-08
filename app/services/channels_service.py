@@ -112,17 +112,27 @@ class ChannelsService:
     async def get_channels(
         self,
         db: AsyncSession,
+        user_id: UUID,
+        organization_id: UUID | None,
     ) -> list[ChannelResponse]:
         """
-        Get all channels.
+        Get channels visible to the user: channels created by anyone in the
+        user's organization. If the user has no organization, only their own
+        channels are returned.
         """
         try:
-            result = await db.execute(select(Channel, User).join(User, Channel.creator_id == User.id))
+            stmt = select(Channel, User).join(User, Channel.creator_id == User.id)
+            if organization_id is not None:
+                stmt = stmt.where(User.organization_id == organization_id)
+            else:
+                stmt = stmt.where(Channel.creator_id == user_id)
+
+            result = await db.execute(stmt)
             channel_creator_pairs = result.all()
 
             channels = [self._create_channel_response(channel, creator) for channel, creator in channel_creator_pairs]
 
-            logger.info(f"Retrieved {len(channels)} channels")
+            logger.info(f"Retrieved {len(channels)} channels for user {user_id} (org {organization_id})")
             return channels
         except Exception as e:
             logger.error(f"Error retrieving channels: {e}")

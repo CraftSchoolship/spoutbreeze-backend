@@ -67,6 +67,8 @@ async def get_all_channels(
     try:
         channels = await channels_service.get_channels(
             db=db,
+            user_id=UUID(str(current_user.id)),
+            organization_id=current_user.organization_id,
         )
         # Return empty list instead of 404 when no channels found
         return ChannelListResponse(channels=channels or [], total=len(channels or []))
