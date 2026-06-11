@@ -23,20 +23,19 @@ async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Resolve the authenticated user from `Authorization: Bearer <token>`
-    OR an `access_token` HTTP-only cookie.
+    """Resolve the authenticated user from a Firebase `session` HTTP-only
+    cookie OR an `Authorization: Bearer <id_token>` header.
 
     The header is checked first so cross-origin / API-style callers (CLI
-    scripts, the BBB plugin, etc.) work without a cookie. The cookie is
-    the fallback for browser navigations where the SPA can't attach a
-    custom header.
+    scripts, the BBB plugin, etc.) can pass a raw Firebase ID token. The
+    session cookie is the fallback for browser navigations — it's a Firebase
+    session cookie minted at sign-in and carries the `roles` custom claim.
 
-    The token payload is stashed on `user._token_payload` so callers that
-    need realm/role data straight from the JWT (the `extract_keycloak_roles`
-    flow) can read it without re-validating the token.
+    The decoded token is stashed on `user._token_payload` so callers that need
+    claims straight from the JWT can read it without re-verifying.
 
-    Raises a 401 on any failure — token missing, invalid, expired, or no
-    matching user row in the DB.
+    Raises a 401 on any failure — credential missing, invalid, expired/revoked,
+    or no matching user row in the DB.
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -45,29 +44,31 @@ async def get_current_user(
     )
 
     try:
-        # Authorization header takes precedence; fall back to the cookie.
         auth_header = request.headers.get("Authorization")
-        token: str | None = None
 
         if auth_header and auth_header.lower().startswith("bearer "):
-            token = auth_header.split(" ", 1)[1].strip()
+            # API-style caller: a raw Firebase ID token.
+            id_token = auth_header.split(" ", 1)[1].strip()
+            if not id_token:
+                raise credentials_exception
+            payload = await _auth_service.verify_id_token(id_token, check_revoked=True)
         else:
-            token = request.cookies.get("access_token")
+            # Browser caller: the session cookie set at sign-in.
+            session_cookie = request.cookies.get("session")
+            if not session_cookie:
+                raise credentials_exception
+            payload = await _auth_service.verify_session_cookie(session_cookie, check_revoked=True)
 
-        if not token:
+        firebase_uid = payload.get("uid") or payload.get("sub")
+        if not firebase_uid:
             raise credentials_exception
 
-        payload = await _auth_service.validate_token(token)
-        keycloak_id = payload.get("sub")
-        if not keycloak_id:
-            raise credentials_exception
-
-        user = await user_service_cached.get_user_by_keycloak_id_cached(keycloak_id, db)
+        user = await user_service_cached.get_user_by_firebase_uid_cached(firebase_uid, db)
         if user is None:
             raise credentials_exception
 
         # Temporary attribute, not persisted — used by callers that read
-        # roles or realm metadata straight from the JWT.
+        # claims straight from the JWT.
         user._token_payload = payload  # type: ignore[attr-defined]
 
         return user

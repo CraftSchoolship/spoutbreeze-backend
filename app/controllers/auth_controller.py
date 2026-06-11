@@ -1,12 +1,7 @@
-import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, cast
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.security import (
-    HTTPBearer,
-    OAuth2AuthorizationCodeBearer,
-)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -15,179 +10,126 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config.database.session import get_db
 from app.config.logger_config import logger
 from app.config.redis_config import cache
-from app.config.settings import get_keycloak_openid, get_settings
+from app.config.settings import get_settings
 from app.controllers.user_controller import get_current_user
-from app.models.auth_models import (
-    DevTokenRequest,
-    TokenRequest,
-    TokenResponse,
-)
+from app.models.auth_models import PasswordResetRequest, SessionRequest
 from app.models.organization_models import OrganizationEmailDomain
 from app.models.user_models import User
 from app.services.auth_service import AuthService
+from app.services.email_template_renderer import render_email
+from app.utils.email import send_email
 from app.utils.rate_limit import limiter
 
-bearer_scheme = HTTPBearer()
 settings = get_settings()
 
 router = APIRouter(prefix="/api", tags=["Authentication"])
 
-
-def _get_well_known() -> dict:
-    """Lazy-load Keycloak well-known config to avoid import-time network calls."""
-    if not hasattr(_get_well_known, "_cache"):
-        _get_well_known._cache = get_keycloak_openid().well_known()  # type: ignore[attr-defined]
-    return _get_well_known._cache  # type: ignore[attr-defined]
-
-
-# OAuth2 scheme for token extraction — uses placeholder URLs that are
-# only relevant for the OpenAPI docs page; actual token validation
-# happens in AuthService.validate_token.
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl="deferred://keycloak/auth",
-    tokenUrl="deferred://keycloak/token",
-)
-
 auth_service = AuthService()
+
+# Session cookie lifetime — must match AuthService.SESSION_COOKIE_MAX_AGE.
+SESSION_COOKIE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 
 
 class ProtectedRouteResponse(BaseModel):
     message: str
 
 
-def set_auth_cookies(response: Response, token_data: dict[str, Any]) -> None:
-    """
-    Set authentication cookies with proper configuration
+def set_session_cookie(response: Response, session_cookie: str) -> None:
+    """Set the Firebase session cookie as an httpOnly cookie.
 
-    Args:
-        response: FastAPI Response object
-        token_data: Dictionary containing access_token, refresh_token, expires_in
+    Replaces the previous access_token + refresh_token pair — the Firebase
+    session cookie is a single long-lived JWT that the Next.js middleware
+    decodes for route guarding (it carries the ``roles`` custom claim).
     """
-    # Calculate expiration times
-    access_token_expires = datetime.now(UTC) + timedelta(seconds=token_data.get("expires_in", 300))
-    refresh_token_expires = datetime.now(UTC) + timedelta(days=30)
-
-    # Determine cookie settings based on environment
     is_production = settings.env == "production"
     cookie_domain = settings.domain if is_production else None
-    samesite_setting: Literal["lax", "strict", "none"] = (
-        "none" if is_production else "lax"
-    )  # "none" required for cross-domain in production
+    samesite_setting: Literal["lax", "strict", "none"] = "none" if is_production else "lax"
+    expires = datetime.now(UTC) + timedelta(seconds=SESSION_COOKIE_MAX_AGE_SECONDS)
 
-    # Set access token cookie
     response.set_cookie(
-        key="access_token",
-        value=token_data["access_token"],
-        expires=access_token_expires,
+        key="session",
+        value=session_cookie,
+        expires=expires,
+        max_age=SESSION_COOKIE_MAX_AGE_SECONDS,
         httponly=True,
-        secure=is_production,  # True in production, False in development
-        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
-        path="/",
-        domain=cookie_domain,
-    )
-
-    # Set refresh token cookie
-    response.set_cookie(
-        key="refresh_token",
-        value=token_data["refresh_token"],
-        expires=refresh_token_expires,
-        httponly=True,
-        secure=is_production,  # True in production, False in development
-        samesite=samesite_setting,  # "none" in production for cross-domain, "lax" in dev
+        secure=is_production,
+        samesite=samesite_setting,
         path="/",
         domain=cookie_domain,
     )
 
 
 def clear_auth_cookies(response: Response) -> None:
-    """
-    Clear authentication cookies
-
-    Args:
-        response: FastAPI Response object
-    """
-    # Clear your application cookies - use None for domain in development
+    """Clear the session cookie."""
     cookie_domain = settings.domain if settings.env == "production" else None
-
+    response.delete_cookie("session", path="/", domain=cookie_domain)
+    # Best-effort cleanup of legacy Keycloak-era cookies for users mid-migration.
     response.delete_cookie("access_token", path="/", domain=cookie_domain)
     response.delete_cookie("refresh_token", path="/", domain=cookie_domain)
 
-    # Clear Keycloak cookies
-    keycloak_cookies = [
-        "AUTH_SESSION_ID",
-        "KC_AUTH_SESSION_HASH",
-        "KEYCLOAK_IDENTITY",
-        "KEYCLOAK_SESSION",
-    ]
 
-    for cookie_name in keycloak_cookies:
-        # Clear without domain (for exact domain matches) - this works for localhost
-        response.delete_cookie(cookie_name, path="/")
-        response.delete_cookie(cookie_name, path=f"/realms/{settings.keycloak_realm}/")
+def extract_firebase_roles(decoded_token: dict) -> list[str] | None:
+    """Extract the ``roles`` custom claim from a decoded Firebase token.
 
-        # Only set domain in production
-        if settings.env == "production" and cookie_domain:
-            response.delete_cookie(cookie_name, path="/", domain=cookie_domain)
-            response.delete_cookie(
-                cookie_name,
-                path=f"/realms/{settings.keycloak_realm}/",
-                domain=cookie_domain,
-            )
-
-
-def extract_keycloak_roles(user_info: dict, client_id: str) -> list | None:
-    """Extract client roles from Keycloak user info"""
-    logger.info(f"Extracting roles for client_id: {client_id}")
-
-    resource_access = user_info.get("resource_access", {})
-    client_access = resource_access.get(client_id, {})
-    roles = client_access.get("roles", [])
-
-    logger.info(f"Extracted roles: {roles}")
-
-    # If no roles from Keycloak, return None to keep database default
-    if not roles:
-        logger.info("No roles found in Keycloak, will use database default")
-        return None
-
-    return roles
-
-
-async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncSession) -> User:
+    Returns None when no roles claim is present so the database default is
+    preserved (matches the previous Keycloak behaviour).
     """
-    Process user information and create/update user in database
+    roles = decoded_token.get("roles")
+    if isinstance(roles, list) and roles:
+        return [str(r) for r in roles]
+    return None
 
-    Args:
-        user_info: User information from Keycloak
-        user_roles: List of roles from Keycloak
-        db: Database session
 
-    Returns:
-        User object
+def _split_name(decoded_token: dict, body: SessionRequest) -> tuple[str, str]:
+    """Resolve first/last name from the request body or the token's ``name``."""
+    if body.first_name or body.last_name:
+        return (body.first_name or "").strip(), (body.last_name or "").strip()
+    full_name = str(decoded_token.get("name", "")).strip()
+    if not full_name:
+        return "", ""
+    parts = full_name.split(" ", 1)
+    return parts[0], (parts[1] if len(parts) > 1 else "")
+
+
+async def process_user_info(decoded_token: dict, body: SessionRequest, db: AsyncSession) -> User:
+    """Create or update the local user row from a verified Firebase token.
+
+    Returns the User. For brand-new users the default role's custom claim is
+    written to Firebase so it rides in subsequent tokens.
     """
-    keycloak_id = user_info.get("sub")
+    firebase_uid = str(decoded_token.get("uid") or decoded_token.get("sub"))
+    email = str(decoded_token.get("email", "")).strip().lower()
 
-    stmt = select(User).where(User.keycloak_id == keycloak_id)
+    # Match by firebase_uid first, then fall back to email. The email fallback
+    # reconciles a row that exists under a stale/migrated uid (e.g. the user was
+    # imported under their old uid but signed up fresh): the verified ID token
+    # proves control of this email, so the live Firebase uid is authoritative
+    # and we rebind the existing row to it instead of colliding on the unique
+    # email constraint.
+    stmt = select(User).where(User.firebase_uid == firebase_uid)
     result = await db.execute(stmt)
     existing_user = result.scalars().first()
 
+    if existing_user is None and email:
+        by_email = await db.execute(select(User).where(User.email == email))
+        existing_user = by_email.scalars().first()
+
+    user_roles = extract_firebase_roles(decoded_token)
+    first_name, last_name = _split_name(decoded_token, body)
+
     if not existing_user:
-        # Create a new user in the database
-        email = str(user_info.get("email", ""))
         new_user = User(
-            keycloak_id=str(keycloak_id),
-            username=str(user_info.get("preferred_username", "")),
+            firebase_uid=firebase_uid,
+            # Firebase has no username concept; email is unique, use it.
+            username=email or firebase_uid,
             email=email,
-            first_name=str(user_info.get("given_name", "")),
-            last_name=str(user_info.get("family_name", "")),
+            first_name=first_name,
+            last_name=last_name,
         )
-        # Only set roles if we got some from Keycloak, otherwise keep default
         if user_roles is not None:
             new_user.set_roles_list(user_roles)
 
-        # Auto-assign organization by email domain (first login only) — but
-        # ONLY against verified domains. Self-serve org claims that haven't
-        # cleared the DNS check don't pull in unrelated signups.
+        # Auto-assign organization by verified email domain (first login only).
         domain = email.rpartition("@")[-1].strip().lower()
         if domain:
             domain_row = await db.execute(
@@ -199,209 +141,145 @@ async def process_user_info(user_info: dict, user_roles: list | None, db: AsyncS
             match = domain_row.scalar_one_or_none()
             if match:
                 new_user.organization_id = match.organization_id
-                # Domain match counts as completed onboarding — they don't
-                # need to see /onboarding because they're already placed.
                 new_user.has_completed_onboarding = True
                 logger.info(
-                    f"Auto-assigned new user {new_user.username} to organization {match.organization_id} via verified domain {domain}"
+                    f"Auto-assigned new user {new_user.username} to organization "
+                    f"{match.organization_id} via verified domain {domain}"
                 )
 
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
-        logger.info(
-            f"New user created: {new_user.username}, with keycloak ID: {new_user.keycloak_id}, roles: {new_user.roles}"
-        )
+        logger.info(f"New user created: {new_user.username}, firebase_uid={new_user.firebase_uid}, roles={new_user.roles}")
+
+        # Mirror the DB role into a Firebase custom claim so middleware sees it
+        # on the next token refresh. Best-effort — a failure here doesn't block
+        # sign-in (the DB remains the source of truth for the backend).
+        try:
+            await auth_service.set_roles_claim(firebase_uid, new_user.get_roles_list())
+        except Exception as e:
+            logger.warning(f"Failed to set initial roles claim for {firebase_uid}: {e}")
+
         try:
             await cache.delete_pattern("users_list:*")
         except Exception as e:
             logger.warning(f"Failed to invalidate users_list cache after new signup: {e}")
         return new_user
-    else:
-        # Update the existing user information
-        existing_user.username = str(user_info.get("preferred_username", existing_user.username))
-        existing_user.email = str(user_info.get("email", existing_user.email))
-        existing_user.first_name = str(user_info.get("given_name", existing_user.first_name))
-        existing_user.last_name = str(user_info.get("family_name", existing_user.last_name))
-        existing_user.updated_at = datetime.now()
 
-        # Only update roles if we got some from Keycloak
-        if user_roles is not None:
-            existing_user.set_roles_list(user_roles)
-
-        await db.commit()
-        await db.refresh(existing_user)
+    # Update the existing user. Only overwrite name fields when we actually
+    # have a value, so we don't blank out a profile on a bare Google login.
+    if existing_user.firebase_uid != firebase_uid:
         logger.info(
-            f"User updated: {existing_user.username}, with keycloak ID: {existing_user.keycloak_id}, roles: {existing_user.roles}"
+            f"Rebinding user {existing_user.id} from firebase_uid "
+            f"{existing_user.firebase_uid} → {firebase_uid} (matched by email)"
         )
-        return existing_user
+        existing_user.firebase_uid = firebase_uid
+    if email:
+        existing_user.email = email
+    if first_name:
+        existing_user.first_name = first_name
+    if last_name:
+        existing_user.last_name = last_name
+    existing_user.updated_at = datetime.now()
+    if user_roles is not None:
+        existing_user.set_roles_list(user_roles)
+
+    await db.commit()
+    await db.refresh(existing_user)
+    logger.info(f"User updated: {existing_user.username}, firebase_uid={existing_user.firebase_uid}")
+    return existing_user
 
 
 @router.get("/protected", response_model=ProtectedRouteResponse)
 async def protected_route(current_user: User = Depends(get_current_user)):
-    """
-    Protected route that requires authentication
-
-    Returns:
-        A welcome message with the username
-    """
+    """Protected route that requires authentication."""
     return {"message": f"Hello, {current_user.username}! This is a protected route."}
 
 
-@router.post("/token")
+@router.post("/session")
 @limiter.limit(lambda: settings.rate_limit_token)
-async def exchange_token(
+async def create_session(
     request: Request,
-    body: TokenRequest,
+    body: SessionRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange authorization code for tokens and set secure cookies"""
-    try:
-        token_data = await auth_service.exchange_token(body.code, body.redirect_uri, body.code_verifier)
+    """Establish a session from a Firebase ID token.
 
-        # Extract the access token
-        access_token = token_data.get("access_token")
-
-        # Get user information
-        user_info = await auth_service.get_user_info(cast(str, access_token))
-        # Log safe identifiers only — the full Keycloak user_info payload
-        # contains email, given/family name, and other PII; previous code
-        # `print()`d it to stdout which leaked PII into pod / aggregator logs.
-        logger.info(f"Token exchanged for sub={user_info.get('sub')} username={user_info.get('preferred_username')}")
-
-        # Extract roles from user_info
-        user_roles = extract_keycloak_roles(user_info, settings.keycloak_client_id)
-
-        # Process user information
-        await process_user_info(user_info, user_roles, db)
-
-        # Set authentication cookies
-        set_auth_cookies(response, token_data)
-
-        # Return user info only (no tokens)
-        return {
-            "user_info": user_info,
-            "expires_in": token_data["expires_in"],
-            "token_type": "Bearer",
-        }
-    except IntegrityError as e:
-        await db.rollback()
-        logger.error(f"Database integrity error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="User with this Keycloak ID already exists",
-        )
-    except Exception as e:
-        logger.error(f"Error exchanging token: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to exchange token: {str(e)}",
-        )
-
-
-@router.post("/refresh")
-@limiter.limit(lambda: settings.rate_limit_refresh)
-async def refresh_token(request: Request, response: Response):
-    """Refresh tokens using cookie-stored refresh token"""
-    try:
-        # Get refresh token from cookie instead of request body
-        refresh_token = request.cookies.get("refresh_token")
-
-        if not refresh_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token not found",
-            )
-
-        token_data = await auth_service.refresh_token(refresh_token)
-
-        # Set new authentication cookies
-        set_auth_cookies(response, token_data)
-
-        return {
-            "user_info": token_data["user_info"],
-            "expires_in": token_data["expires_in"],
-            "token_type": "Bearer",
-        }
-    except Exception as e:
-        # Only clear the access_token on failed refresh, NOT the refresh_token.
-        # The middleware / client will detect the expired refresh token via JWT
-        # expiry and handle the full logout (clearing both cookies) if needed.
-        is_production = settings.env == "production"
-        cookie_domain = settings.domain if is_production else None
-        response.delete_cookie("access_token", path="/", domain=cookie_domain)
-
-        logger.error(f"Refresh token error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Refresh token invalid or expired",
-        )
-
-
-@router.post("/dev-token", response_model=TokenResponse)
-@limiter.limit(lambda: settings.rate_limit_dev_token)
-async def get_dev_token(
-    request: Request,
-    body: DevTokenRequest,
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-):
-    """Development endpoint to get tokens (ONLY FOR LOCAL TESTING).
-
-    Credentials must be sent in the JSON request body — never as query
-    parameters — so they don't end up in access logs / browser history.
+    Verifies the ID token, upserts the local user, mints a Firebase session
+    cookie, and sets it as an httpOnly cookie.
     """
     try:
-        # Only allow in development mode
-        env = settings.env
-        if env != "development":
-            raise HTTPException(status_code=404, detail="Not found")
+        decoded = await auth_service.verify_id_token(body.id_token)
 
-        # Get token from Keycloak (off the event loop — python-keycloak is sync)
-        token_response = await asyncio.to_thread(
-            get_keycloak_openid().token,
-            grant_type="password",
-            username=body.username,
-            password=body.password,
-            scope="openid profile email",
-        )
+        logger.info(f"Session requested for uid={decoded.get('uid')} email={decoded.get('email')}")
 
-        # Process user info
-        access_token = token_response.get("access_token")
-        user_info = await auth_service.get_user_info(cast(str, access_token))
+        user = await process_user_info(decoded, body, db)
 
-        # Extract roles
-        user_roles = extract_keycloak_roles(user_info, settings.keycloak_client_id)
-
-        # Process user information
-        await process_user_info(user_info, user_roles, db)
-
-        # Set authentication cookies
-        set_auth_cookies(response, token_response)
+        session_cookie = await auth_service.create_session_cookie(body.id_token)
+        set_session_cookie(response, session_cookie)
 
         return {
-            "access_token": token_response["access_token"],
-            "expires_in": token_response["expires_in"],
-            "refresh_token": token_response["refresh_token"],
-            "refresh_expires_in": token_response["refresh_expires_in"],
+            "user_info": {
+                "uid": decoded.get("uid"),
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "roles": user.get_roles_list(),
+            },
+            "expires_in": SESSION_COOKIE_MAX_AGE_SECONDS,
             "token_type": "Bearer",
-            "user_info": user_info,
         }
-
     except HTTPException:
-        # Preserve intentional HTTP errors (e.g. the 404 when env != "development")
         raise
     except IntegrityError as e:
         await db.rollback()
-        logger.error(f"Database integrity error: {str(e)}")
+        logger.error(f"Database integrity error during session creation: {e}")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="User with this Keycloak ID already exists",
+            detail="User with this Firebase UID already exists",
         )
     except Exception as e:
-        logger.error(f"Dev token error: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to get token: {str(e)}")
+        logger.error(f"Error creating session: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to establish session",
+        )
+
+
+@router.post("/password-reset")
+@limiter.limit(lambda: settings.rate_limit_token)
+async def request_password_reset(request: Request, body: PasswordResetRequest, response: Response):
+    """Send a self-hosted password-reset email.
+
+    Generates a Firebase reset code via the Admin SDK, embeds it in a link to
+    our own ``/auth/action`` page, and emails it through the configured SMTP
+    relay. Always returns 200 with the same body regardless of whether the
+    email is registered — never reveal account existence.
+    """
+    email = body.email.strip().lower()
+    generic_response = {"message": "If an account exists for that email, a reset link has been sent."}
+
+    continue_url = f"{settings.frontend_url}/auth/signin"
+    oob_code = await auth_service.generate_password_reset_code(email, continue_url)
+
+    if oob_code:
+        reset_url = f"{settings.frontend_url}/auth/action?mode=resetPassword&oobCode={oob_code}"
+        html_body = render_email(
+            "password_reset",
+            {"title": "Reset your password", "data": {"reset_url": reset_url}},
+        )
+        await send_email(
+            recipient_email=email,
+            subject="Reset your BlueScale password",
+            text_body=f"Reset your password using this link (expires in 1 hour):\n\n{reset_url}\n\n"
+            "If you didn't request this, ignore this email.",
+            html_body=html_body,
+        )
+    else:
+        logger.info("Password reset requested for non-existent / unresolved email (suppressed)")
+
+    return generic_response
 
 
 @router.post("/logout")
@@ -411,28 +289,12 @@ async def logout(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Logout the user and invalidate the refresh token
-    """
+    """Log the user out: revoke Firebase refresh tokens and clear the cookie."""
     try:
-        # Get refresh token from cookie
-        refresh_token = request.cookies.get("refresh_token")
-
-        if refresh_token:
-            await auth_service.logout(refresh_token)
-
-        # Clear authentication cookies
-        clear_auth_cookies(response)
-
-        return {
-            "message": "Successfully logged out",
-            "statusCode": status.HTTP_200_OK,
-        }
+        await auth_service.logout(current_user.firebase_uid)
     except Exception as e:
-        logger.error(f"Logout error: {str(e)}")
-        # Still clear cookies even if logout fails
+        logger.error(f"Logout error: {e}")
+    finally:
         clear_auth_cookies(response)
-        return {
-            "message": "Successfully logged out",
-            "statusCode": status.HTTP_200_OK,
-        }
+
+    return {"message": "Successfully logged out", "statusCode": status.HTTP_200_OK}
