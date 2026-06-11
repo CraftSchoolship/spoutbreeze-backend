@@ -1,571 +1,227 @@
+"""Authentication service backed by Firebase Authentication.
+
+Replaces the previous Keycloak/OpenID implementation. Sessions use Firebase
+**session cookies**: the frontend signs in with the Firebase Web SDK, obtains
+an ID token, and the backend exchanges it for a long-lived httpOnly session
+cookie (see auth_controller.create_session). Roles are stored both in the
+database (source of truth for application logic) and as a Firebase custom
+claim (``roles``) so they ride inside the ID token / session cookie and can be
+read by the Next.js middleware for route guarding.
+
+The Firebase Admin SDK is synchronous, so every call is dispatched to a
+thread with ``asyncio.to_thread`` to avoid blocking the event loop.
+"""
+
 import asyncio
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
-import httpx
 from fastapi import HTTPException, status
-from jose import jwt
-from jose.exceptions import JWTClaimsError
+from firebase_admin import auth as fb_auth
 
+from app.config.firebase_config import get_firebase_app
 from app.config.logger_config import logger
-from app.config.settings import get_keycloak_openid, get_settings, resolve_ssl_verify
+
+# Firebase session cookies can live up to 14 days. After that the user must
+# sign in again (the Web SDK refreshes ID tokens silently up to that point).
+SESSION_COOKIE_MAX_AGE = timedelta(days=14)
 
 
 class AuthService:
-    """
-    Service for authentication and authorization operations
-    """
+    """Service for authentication and authorization operations (Firebase)."""
 
     def __init__(self) -> None:
-        self.settings = get_settings()
-        self.keycloak_client_id = self.settings.keycloak_client_id
+        # Touch the app so a misconfigured service account fails loudly at
+        # first use rather than deep inside a request handler.
+        self._app = get_firebase_app()
 
-        self._public_key: str | None = None
+    def _ensure_app(self) -> None:
+        if self._app is None:
+            self._app = get_firebase_app()
+        if self._app is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication backend is not configured",
+            )
 
-        self._admin_token_cache: dict | None = None
+    async def verify_id_token(self, id_token: str, check_revoked: bool = False) -> dict[str, Any]:
+        """Verify a Firebase ID token (used for Bearer-style API callers).
 
-        # SSL verification for HTTP clients
-        self.ssl_verify = self._get_ssl_verify()
-
-    async def _get_public_key(self) -> str:
-        """Lazy-load the Keycloak public key on first use (off the event loop)."""
-        if self._public_key is None:
-            raw_key = await asyncio.to_thread(get_keycloak_openid().public_key)
-            if not raw_key.startswith("-----BEGIN"):
-                self._public_key = f"-----BEGIN PUBLIC KEY-----\n{raw_key}\n-----END PUBLIC KEY-----"
-            else:
-                self._public_key = raw_key
-        return self._public_key
-
-    def _get_ssl_verify(self) -> str | bool:
-        """Resolve SSL verification from settings (no filesystem probing).
-
-        Delegates to `resolve_ssl_verify` so the policy lives in one place
-        and the previous silent-fallback-to-`verify=False` behavior cannot
-        return.
+        Returns the decoded claims (``uid``, ``email``, ``name``, ``roles`` …).
+        Raises 401 on any failure.
         """
-        return resolve_ssl_verify(self.settings)
-
-    def _http_client(self) -> httpx.AsyncClient:
-        """Build an httpx.AsyncClient with the configured SSL verification."""
-        return httpx.AsyncClient(verify=self.ssl_verify, timeout=10.0)
-
-    async def validate_token(self, token: str) -> dict[str, Any]:
-        """
-        Validate and decode the JWT token
-
-        Args:
-            token: The JWT token to validate
-
-        Returns:
-            dict: The decoded token payload
-
-        Raises:
-            HTTPException: If the token is invalid
-        """
+        self._ensure_app()
         try:
-            public_key = await self._get_public_key()
-
-            # Decode with python-jose. Audience is enforced so that tokens
-            # minted for sibling clients in the same Keycloak realm are
-            # rejected — without this check, any realm-signed token would
-            # be accepted regardless of who it was issued for.
-            try:
-                payload = jwt.decode(
-                    token,
-                    public_key,
-                    algorithms=["RS256"],
-                    audience=self.keycloak_client_id,
-                    options={
-                        "verify_aud": True,
-                        "verify_exp": True,
-                        "verify_iat": True,
-                        "verify_nbf": True,
-                    },
-                )
-
-                # Verify the token has a username
-                username = payload.get("preferred_username")
-                if not username:
-                    raise HTTPException(
-                        status_code=status.HTTP_401_UNAUTHORIZED,
-                        detail="Invalid token: missing username",
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-
-                return payload
-
-            except JWTClaimsError as e:
-                # Surfaces audience-claim mismatches distinctly so a
-                # Keycloak audience-mapper misconfiguration is easy to
-                # spot in logs (it shows up as the same error on every
-                # request).
-                logger.error(f"JWT claims rejected (audience mismatch likely; expected aud={self.keycloak_client_id!r}): {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid token: claim verification failed",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-            except Exception as e:
-                logger.error(f"Jose JWT decode error: {str(e)}")
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail=f"Invalid token: {str(e)}",
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-        except HTTPException:
-            # Re-raise HTTP exceptions
-            raise
-
+            return await asyncio.to_thread(fb_auth.verify_id_token, id_token, check_revoked=check_revoked)
         except Exception as e:
-            # Catch-all for any other exceptions
-            logger.error(f"Unexpected token validation error: {str(e)}")
+            logger.error(f"Firebase ID token verification failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    async def exchange_token(self, code: str, redirect_uri: str, code_verifier: str) -> dict[str, Any]:
-        """
-        Exchange authorization code for tokens
-        """
+    # Back-compat alias — callers that previously used ``validate_token`` for a
+    # bearer JWT now validate a Firebase ID token.
+    async def validate_token(self, token: str) -> dict[str, Any]:
+        return await self.verify_id_token(token)
+
+    async def create_session_cookie(self, id_token: str) -> str:
+        """Exchange a freshly-minted ID token for a long-lived session cookie."""
+        self._ensure_app()
         try:
-            # `code_verifier` is passed via the library's `**extra: dict`
-            # parameter, which mypy refuses to accept a str for. Silence
-            # the false positive — the library accepts strings at runtime.
-            token = await asyncio.to_thread(
-                get_keycloak_openid().token,
-                grant_type="authorization_code",
-                code=code,
-                redirect_uri=redirect_uri,
-                code_verifier=code_verifier,  # type: ignore[arg-type]
-                scope="openid profile email account",
+            return await asyncio.to_thread(
+                fb_auth.create_session_cookie,
+                id_token,
+                expires_in=SESSION_COOKIE_MAX_AGE,
             )
-            return token
         except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to exchange token: {str(e)}",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    async def refresh_token(self, refresh_token: str) -> dict[str, Any]:
-        """
-        Refresh the access token using the refresh token
-
-        Args:
-            refresh_token: The refresh token to use
-
-        Returns:
-            dict: New tokens including access_token, refresh_token and user_info
-
-        Raises:
-            HTTPException: If the refresh token is invalid or expired
-        """
-        try:
-            token_response = await asyncio.to_thread(get_keycloak_openid().refresh_token, refresh_token)
-
-            # Get user info with the new token
-            user_info = await self.get_user_info(token_response["access_token"])
-
-            return {
-                "access_token": token_response["access_token"],
-                "expires_in": token_response.get("expires_in", 300),
-                "refresh_token": token_response["refresh_token"],
-                "token_type": "Bearer",
-                "user_info": user_info,
-            }
-        except Exception as e:
-            logger.error(f"Failed to refresh token: {str(e)}")
+            logger.error(f"Failed to create Firebase session cookie: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Refresh token invalid or expired",
+                detail="Failed to establish session",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    async def get_user_info(self, access_token: str) -> dict[str, Any]:
-        """
-        Get user information from Keycloak using the access token
-        """
+    async def verify_session_cookie(self, session_cookie: str, check_revoked: bool = True) -> dict[str, Any]:
+        """Verify a session cookie and return its decoded claims."""
+        self._ensure_app()
         try:
-            user_info = await asyncio.to_thread(get_keycloak_openid().userinfo, access_token)
-            return user_info
-        except Exception:
+            return await asyncio.to_thread(
+                fb_auth.verify_session_cookie,
+                session_cookie,
+                check_revoked=check_revoked,
+            )
+        except Exception as e:
+            logger.error(f"Firebase session cookie verification failed: {e}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Failed to get user info",
+                detail="Invalid or expired session",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-    async def _get_admin_token(self, client: httpx.AsyncClient | None = None) -> str:
+    async def get_user(self, uid: str) -> fb_auth.UserRecord:
+        """Fetch a Firebase user record by uid."""
+        self._ensure_app()
+        return await asyncio.to_thread(fb_auth.get_user, uid)
+
+    async def generate_password_reset_code(self, email: str, continue_url: str) -> str | None:
+        """Generate a password-reset oobCode for ``email``.
+
+        Returns the ``oobCode`` parsed out of the Admin-generated link, or
+        ``None`` if the email isn't registered (so callers can stay silent and
+        avoid account enumeration). We extract just the code and embed it in our
+        own ``/auth/action`` URL — the link Firebase generates otherwise points
+        at its hosted handler.
         """
-        Get admin token from Keycloak with caching
-        """
-        # Check if we have a cached token that's still valid
-        if self._admin_token_cache and self._admin_token_cache["expires_at"] > datetime.now():
-            return self._admin_token_cache["token"]
-
-        admin_token_url = f"{self.settings.keycloak_server_url}/realms/master/protocol/openid-connect/token"
-
-        data = {
-            "grant_type": "password",
-            "client_id": "admin-cli",
-            "username": self.settings.keycloak_admin_username,
-            "password": self.settings.keycloak_admin_password,
-        }
-
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
-
+        self._ensure_app()
         try:
-            if client is None:
-                async with self._http_client() as new_client:
-                    response = await new_client.post(admin_token_url, data=data, headers=headers)
-            else:
-                response = await client.post(admin_token_url, data=data, headers=headers)
-            response.raise_for_status()
-
-            token_data = response.json()
-            access_token = token_data["access_token"]
-            expires_in = token_data.get("expires_in", 300)
-
-            # Cache the token with expiration (subtract 30 seconds for safety)
-            self._admin_token_cache = {
-                "token": access_token,
-                "expires_at": datetime.now() + timedelta(seconds=expires_in - 30),
-            }
-
-            return access_token
-        except Exception as e:
-            logger.error(f"Failed to get admin token: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to authenticate with Keycloak admin",
+            settings = fb_auth.ActionCodeSettings(url=continue_url)
+            link = await asyncio.to_thread(
+                fb_auth.generate_password_reset_link, email, settings
             )
+        except fb_auth.UserNotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"Failed to generate password reset link: {e}")
+            return None
+
+        params = parse_qs(urlparse(link).query)
+        codes = params.get("oobCode")
+        return codes[0] if codes else None
 
     async def update_user_profile(self, user_id: str, user_data: dict[str, Any]) -> bool:
+        """Update a user's Firebase profile (email / display name).
+
+        ``user_id`` is the Firebase uid. Field names mirror the previous
+        Keycloak-era signature so callers don't change.
         """
-        Update user information in Keycloak using admin API
-        """
-        try:
-            logger.info(f"Updating profile for user: {user_id}")
+        self._ensure_app()
+        kwargs: dict[str, Any] = {}
+        if "email" in user_data:
+            kwargs["email"] = user_data["email"]
+        first = user_data.get("first_name")
+        last = user_data.get("last_name")
+        if first is not None or last is not None:
+            kwargs["display_name"] = " ".join(p for p in [first, last] if p).strip()
 
-            async with self._http_client() as client:
-                # Get admin token (reuses the same client connection pool)
-                admin_token = await self._get_admin_token(client=client)
-
-                # Map the field names to Keycloak's expected format
-                keycloak_user_data = {}
-
-                if "first_name" in user_data:
-                    keycloak_user_data["firstName"] = user_data["first_name"]
-                if "last_name" in user_data:
-                    keycloak_user_data["lastName"] = user_data["last_name"]
-                if "email" in user_data:
-                    keycloak_user_data["email"] = user_data["email"]
-                if "username" in user_data:
-                    keycloak_user_data["username"] = user_data["username"]
-
-                logger.debug(f"Keycloak update data: {keycloak_user_data}")
-
-                # Update user with the correctly formatted data using Keycloak Admin API
-                update_url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/users/{user_id}"
-
-                headers = {
-                    "Authorization": f"Bearer {admin_token}",
-                    "Content-Type": "application/json",
-                }
-
-                response = await client.put(update_url, json=keycloak_user_data, headers=headers)
-                response.raise_for_status()
-
-            logger.info(f"User profile updated successfully in Keycloak for user ID: {user_id}")
+        if not kwargs:
             return True
-        except httpx.TimeoutException:
-            logger.error(f"Timeout while updating user profile for user ID: {user_id}")
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail="Request timeout while updating user profile",
-            )
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to update user info in Keycloak for user {user_id}: {str(e)}")
-            response_obj = getattr(e, "response", None)
-            if response_obj is not None:
-                logger.error(f"Response status: {response_obj.status_code}")
-                logger.error(f"Response content: {response_obj.text}")
+
+        try:
+            await asyncio.to_thread(fb_auth.update_user, user_id, **kwargs)
+            logger.info(f"Updated Firebase profile for uid {user_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to update Firebase profile for uid {user_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Failed to update user info: {str(e)}",
-                headers={"WWW-Authenticate": "Bearer"},
+                detail=f"Failed to update user info: {e}",
             )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Unexpected error updating user profile for user {user_id}: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred while updating user profile",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    async def logout(self, refresh_token: str) -> None:
-        """
-        Logout the user by invalidating the refresh token
-        """
-        try:
-            await asyncio.to_thread(get_keycloak_openid().logout, refresh_token)
-            logger.info("User logged out successfully")
-        except Exception as e:
-            logger.error(f"Failed to logout: {str(e)}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to logout",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-
-    async def health_check(self) -> bool:
-        """
-        Check if Keycloak is reachable
-        """
-        try:
-            # Try to get the well-known configuration
-            well_known = await asyncio.to_thread(get_keycloak_openid().well_known)
-            return "authorization_endpoint" in well_known
-        except Exception as e:
-            logger.error(f"Keycloak health check failed: {str(e)}")
-            return False
-
-    async def _get_client_id(self, client: httpx.AsyncClient, admin_token: str, client_name: str) -> str:
-        """
-        Get the internal client ID for a given client name
-        """
-        try:
-            url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/clients"
-            headers = {
-                "Authorization": f"Bearer {admin_token}",
-                "Content-Type": "application/json",
-            }
-
-            params = {"clientId": client_name}
-
-            response = await client.get(url, headers=headers, params=params)
-            response.raise_for_status()
-
-            clients = response.json()
-            if not clients:
-                raise ValueError(f"Client '{client_name}' not found")
-
-            return clients[0]["id"]
-        except Exception as e:
-            logger.error(f"Failed to get client ID for {client_name}: {str(e)}")
-            raise
-
-    async def _get_client_role(
-        self, client: httpx.AsyncClient, admin_token: str, client_id: str, role_name: str
-    ) -> dict[str, Any]:
-        """
-        Get client role information
-        """
-        try:
-            url = (
-                f"{self.settings.keycloak_server_url}/admin/realms/"
-                f"{self.settings.keycloak_realm}/clients/{client_id}/roles/{role_name}"
-            )
-            headers = {
-                "Authorization": f"Bearer {admin_token}",
-                "Content-Type": "application/json",
-            }
-
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-
-            return response.json()
-        except Exception as e:
-            logger.error(f"Failed to get client role {role_name}: {str(e)}")
-            raise
-
-    async def _get_user_client_roles(
-        self, client: httpx.AsyncClient, admin_token: str, user_id: str, client_id: str
-    ) -> list[dict[str, Any]]:
-        """
-        Get current client roles for a user
-        """
-        try:
-            url = (
-                f"{self.settings.keycloak_server_url}/admin/realms/"
-                f"{self.settings.keycloak_realm}/users/{user_id}/role-mappings/clients/{client_id}"
-            )
-            headers = {
-                "Authorization": f"Bearer {admin_token}",
-                "Content-Type": "application/json",
-            }
-
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-
-            return response.json()
-        except Exception as e:
-            logger.error(f"Failed to get user client roles: {str(e)}")
-            return []
-
-    async def _remove_user_client_roles(
-        self,
-        client: httpx.AsyncClient,
-        admin_token: str,
-        user_id: str,
-        client_id: str,
-        roles: list[dict[str, Any]],
-    ) -> None:
-        """
-        Remove client roles from a user
-        """
-        if not roles:
-            return
-
-        try:
-            url = (
-                f"{self.settings.keycloak_server_url}/admin/realms/"
-                f"{self.settings.keycloak_realm}/users/{user_id}/role-mappings/clients/{client_id}"
-            )
-            headers = {
-                "Authorization": f"Bearer {admin_token}",
-                "Content-Type": "application/json",
-            }
-
-            response = await client.request("DELETE", url, json=roles, headers=headers)
-            response.raise_for_status()
-
-            logger.info(f"Successfully removed {len(roles)} client roles from user {user_id}")
-        except Exception as e:
-            logger.error(f"Failed to remove client roles: {str(e)}")
-            raise
-
-    async def _assign_user_client_role(
-        self,
-        client: httpx.AsyncClient,
-        admin_token: str,
-        user_id: str,
-        client_id: str,
-        role: dict[str, Any],
-    ) -> None:
-        """
-        Assign a client role to a user
-        """
-        try:
-            url = (
-                f"{self.settings.keycloak_server_url}/admin/realms/"
-                f"{self.settings.keycloak_realm}/users/{user_id}/role-mappings/clients/{client_id}"
-            )
-            headers = {
-                "Authorization": f"Bearer {admin_token}",
-                "Content-Type": "application/json",
-            }
-
-            response = await client.post(url, json=[role], headers=headers)
-            response.raise_for_status()
-
-            logger.info(f"Successfully assigned client role {role['name']} to user {user_id}")
-        except Exception as e:
-            logger.error(f"Failed to assign client role: {str(e)}")
-            raise
 
     async def update_user_role(self, user_id: str, new_role: str) -> None:
-        """
-        Update a user's role in Keycloak using the proper Admin REST API
+        """Set the user's role as a Firebase custom claim.
 
-        Args:
-            user_id: The Keycloak user ID
-            new_role: The new role to assign
+        ``user_id`` is the Firebase uid. The claim propagates into every ID
+        token minted afterwards, so the Next.js middleware can read it from the
+        session cookie. The database remains the source of truth for app logic.
         """
+        await self.set_roles_claim(user_id, [new_role])
+
+    async def set_roles_claim(self, uid: str, roles: list[str]) -> None:
+        """Write the ``roles`` custom claim for a user."""
+        self._ensure_app()
         try:
-            async with self._http_client() as client:
-                admin_token = await self._get_admin_token(client=client)
-
-                # Get the spoutbreezeAPI client ID
-                client_id = await self._get_client_id(client, admin_token, "spoutbreezeAPI")
-                logger.info(f"Found client ID: {client_id} for spoutbreezeAPI")
-
-                # Get current client roles for the user
-                current_roles = await self._get_user_client_roles(client, admin_token, user_id, client_id)
-                logger.info(f"Current client roles for user {user_id}: {[role['name'] for role in current_roles]}")
-
-                # Remove all existing client roles for this client
-                if current_roles:
-                    await self._remove_user_client_roles(client, admin_token, user_id, client_id, current_roles)
-                    logger.info(f"Removed existing client roles from user {user_id}")
-
-                # Get the new role information
-                new_role_info = await self._get_client_role(client, admin_token, client_id, new_role)
-                logger.info(f"Found role info for {new_role}: {new_role_info}")
-
-                # Assign the new client role
-                await self._assign_user_client_role(client, admin_token, user_id, client_id, new_role_info)
-
-            logger.info(f"Successfully updated user {user_id} client role to {new_role}")
-
-        except HTTPException:
-            raise
+            # Preserve any existing non-role claims.
+            user = await asyncio.to_thread(fb_auth.get_user, uid)
+            claims = dict(user.custom_claims or {})
+            claims["roles"] = roles
+            await asyncio.to_thread(fb_auth.set_custom_user_claims, uid, claims)
+            logger.info(f"Set roles claim {roles} for uid {uid}")
         except Exception as e:
-            logger.error(f"Failed to update user role in Keycloak: {str(e)}")
+            logger.error(f"Failed to set roles claim for uid {uid}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to update user role: {str(e)}",
+                detail=f"Failed to update user role: {e}",
             )
 
     async def delete_user(self, user_id: str) -> bool:
-        """
-        Permanently delete a user from Keycloak using the Admin REST API.
-
-        Args:
-            user_id: The Keycloak user ID (sub claim)
-
-        Returns:
-            True if the user was deleted successfully
-
-        Raises:
-            HTTPException: If the deletion fails
-        """
+        """Permanently delete a user from Firebase. ``user_id`` is the uid."""
+        self._ensure_app()
         try:
-            logger.info(f"Deleting user from Keycloak: {user_id}")
-
-            async with self._http_client() as client:
-                admin_token = await self._get_admin_token(client=client)
-
-                delete_url = f"{self.settings.keycloak_server_url}/admin/realms/{self.settings.keycloak_realm}/users/{user_id}"
-
-                headers = {
-                    "Authorization": f"Bearer {admin_token}",
-                    "Content-Type": "application/json",
-                }
-
-                response = await client.delete(delete_url, headers=headers)
-                response.raise_for_status()
-
-            logger.info(f"User {user_id} deleted successfully from Keycloak")
+            await asyncio.to_thread(fb_auth.delete_user, user_id)
+            logger.info(f"Deleted Firebase user {user_id}")
             return True
-
-        except httpx.TimeoutException:
-            logger.error(f"Timeout while deleting user {user_id} from Keycloak")
-            raise HTTPException(
-                status_code=status.HTTP_408_REQUEST_TIMEOUT,
-                detail="Request timeout while deleting user from Keycloak",
-            )
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to delete user {user_id} from Keycloak: {str(e)}")
-            response_obj = getattr(e, "response", None)
-            if response_obj is not None:
-                logger.error(f"Response status: {response_obj.status_code}")
-                logger.error(f"Response content: {response_obj.text}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to delete user from Keycloak: {str(e)}",
-            )
-        except HTTPException:
-            raise
+        except fb_auth.UserNotFoundError:
+            # Already gone — treat as success so DB cleanup can proceed.
+            logger.warning(f"Firebase user {user_id} not found during delete; continuing")
+            return True
         except Exception as e:
-            logger.error(f"Unexpected error deleting user {user_id} from Keycloak: {str(e)}")
+            logger.error(f"Failed to delete Firebase user {user_id}: {e}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="An unexpected error occurred while deleting user from Keycloak",
+                detail=f"Failed to delete user from authentication backend: {e}",
             )
+
+    async def logout(self, uid: str) -> None:
+        """Revoke all refresh tokens for the user, invalidating sessions.
+
+        ``check_revoked=True`` on session-cookie verification then rejects the
+        existing session on its next use.
+        """
+        self._ensure_app()
+        try:
+            await asyncio.to_thread(fb_auth.revoke_refresh_tokens, uid)
+            logger.info(f"Revoked refresh tokens for uid {uid}")
+        except Exception as e:
+            # Logout is best-effort; cookie is cleared regardless.
+            logger.error(f"Failed to revoke refresh tokens for uid {uid}: {e}")
+
+    async def health_check(self) -> bool:
+        """Report whether the Firebase Admin SDK is initialised."""
+        try:
+            self._ensure_app()
+            return True
+        except Exception:
+            return False
