@@ -65,17 +65,6 @@ async def lifespan(app: FastAPI):
     """
     logger.info("=== APPLICATION STARTUP ===")
 
-    # Patch OAuth2 scheme with real Keycloak URLs (now that Keycloak should be reachable)
-    try:
-        from app.controllers.auth_controller import _get_well_known, oauth2_scheme
-
-        wk = _get_well_known()
-        oauth2_scheme.model.flows.authorizationCode.authorizationUrl = wk["authorization_endpoint"]  # type: ignore[union-attr, attr-defined]
-        oauth2_scheme.model.flows.authorizationCode.tokenUrl = wk["token_endpoint"]  # type: ignore[union-attr, attr-defined]
-        logger.info("[Auth] Keycloak well-known URLs loaded for OpenAPI docs")
-    except Exception as e:
-        logger.warning(f"[Auth] Could not load Keycloak well-known URLs: {e}")
-
     # Startup: Configure OpenAPI schema
     openapi_schema = get_openapi(
         title="SpoutBreeze API",
@@ -226,14 +215,6 @@ async def custom_swagger_ui_html():
         swagger_js_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
         swagger_css_url="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
         swagger_favicon_url="/favicon.ico",
-        init_oauth={
-            "clientId": setting.keycloak_client_id,
-            "usePkceWithAuthorizationCodeGrant": True,
-            "realm": setting.keycloak_realm,
-            "appName": "SpoutBreeze API",
-            "scope": "openid profile email",
-            "additionalQueryStringParams": {},
-        },
     )
 
 

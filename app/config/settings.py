@@ -1,22 +1,11 @@
-import os
 from functools import lru_cache
 
-import urllib3
-from keycloak import KeycloakOpenID
 from pydantic import Field
 from pydantic_settings import BaseSettings
-
-from app.config.logger_config import logger
 
 
 class Settings(BaseSettings):
     """Application settings"""
-
-    # Keycloak settings
-    keycloak_server_url: str
-    keycloak_client_id: str
-    keycloak_client_secret: str
-    keycloak_realm: str
 
     # BBB API settings
     bbb_server_base_url: str
@@ -78,21 +67,8 @@ class Settings(BaseSettings):
     # Token encryption
     token_encryption_key: str  # Fernet key for encrypting OAuth tokens at rest
 
-    # SSL verification for Keycloak HTTPS calls.
-    # Production: leave `ssl_verify=True` (default). Either rely on the
-    # system CA trust store (works for public CAs like Let's Encrypt) or
-    # set `ssl_cert_file` to a custom CA bundle for private / self-signed
-    # CAs. NEVER set `ssl_verify=False` in production — every Keycloak
-    # call (including admin credential exchange) becomes MITM-vulnerable.
-    ssl_verify: bool = True
-    ssl_cert_file: str | None = None
-
     # Api base url - Let Pydantic handle this
     api_base_url: str = "http://localhost:8000"  # Default value
-
-    # Admin credentials for Keycloak
-    keycloak_admin_username: str = "admin"
-    keycloak_admin_password: str = "admin"
 
     domain: str = "localhost"
 
@@ -135,7 +111,11 @@ class Settings(BaseSettings):
     smtp_from_name: str = "bluescale"
     smtp_use_starttls: bool = True
 
-    model_config = {"env_file": ".env"}
+    # ``extra="ignore"`` so leftover environment variables (e.g. the retired
+    # KEYCLOAK_* / SSL_* keys still present in deployment configs during the
+    # Firebase migration) don't crash startup. Remove them from the Helm
+    # values once the rollout is complete.
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 @lru_cache
@@ -144,66 +124,3 @@ def get_settings():
 
 
 settings = get_settings()
-
-
-def resolve_ssl_verify(s: Settings) -> str | bool:
-    """Resolve the `verify=` argument for HTTP clients hitting Keycloak.
-
-    Returns:
-        - ``False``: verification disabled — only when ``ssl_verify=False``
-          is set explicitly. Suitable for local dev only.
-        - ``str``  : path to a CA bundle for private / self-signed CAs.
-        - ``True`` : verify against the system CA trust store (the right
-          choice when Keycloak uses a public CA like Let's Encrypt).
-
-    Raises:
-        RuntimeError: ``ssl_cert_file`` is set but the file is missing.
-            That's a deployment misconfiguration, not something to silently
-            fall back from — silent fallback was the original CVE.
-    """
-    if not s.ssl_verify:
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        logger.warning(
-            "SSL verification is DISABLED for Keycloak HTTPS calls. "
-            "Every connection is MITM-vulnerable. Use only in local development."
-        )
-        return False
-
-    # Treat empty string as unset — the `.env.example` template uses
-    # `SSL_CERT_FILE=` (empty) as the "no custom CA" placeholder.
-    cert_file = (s.ssl_cert_file or "").strip()
-    if cert_file:
-        if not os.path.exists(cert_file):
-            raise RuntimeError(
-                f"ssl_cert_file is set to {cert_file!r} but the file does not "
-                "exist. Fix the path / cert volume mount, or unset ssl_cert_file "
-                "to use the system CA trust store."
-            )
-        logger.info(f"Using custom SSL CA bundle: {cert_file}")
-        return cert_file
-
-    logger.info("Using system CA trust store for Keycloak HTTPS verification")
-    return True
-
-
-verify_ssl: str | bool = resolve_ssl_verify(settings)
-
-
-@lru_cache
-def get_keycloak_openid() -> KeycloakOpenID:
-    """Lazily build the shared KeycloakOpenID client.
-
-    Previously the client was constructed at module import time, which
-    meant any test (or one-off script) that imported ``settings`` needed
-    a reachable Keycloak server. With ``@lru_cache`` the constructor
-    runs only on first call, and tests can swap the factory via
-    ``monkeypatch.setattr(auth_module, "get_keycloak_openid", ...)``.
-    """
-    s = get_settings()
-    return KeycloakOpenID(
-        server_url=s.keycloak_server_url,
-        client_id=s.keycloak_client_id,
-        realm_name=s.keycloak_realm,
-        client_secret_key=s.keycloak_client_secret,
-        verify=resolve_ssl_verify(s),
-    )
