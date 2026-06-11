@@ -85,7 +85,7 @@ async def second_user(db_session: AsyncSession):
     """Create a second user to act as organizer."""
     user = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"organizer-{uuid.uuid4()}",
         email=f"organizer-{uuid.uuid4()}@example.com",
         first_name="Org",
@@ -104,7 +104,7 @@ async def third_user(db_session: AsyncSession):
     """Create a third user to act as another organizer."""
     user = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"organizer2-{uuid.uuid4()}",
         email=f"organizer2-{uuid.uuid4()}@example.com",
         first_name="Org2",

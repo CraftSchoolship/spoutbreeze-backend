@@ -224,7 +224,7 @@ class TestRtmpController:
         # Create a different user
         different_user = User(
             id=uuid4(),
-            keycloak_id=f"different-keycloak-id-{uuid4()}",
+            firebase_uid=f"different-keycloak-id-{uuid4()}",
             username=f"differentuser-{uuid4()}",
             email=f"different-{uuid4()}@example.com",
             first_name="Different",

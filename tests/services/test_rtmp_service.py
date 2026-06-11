@@ -76,7 +76,7 @@ async def test_create_rtmp_endpoints_duplicate_title_maps_error(db_session: Asyn
 async def test_get_all_rtmp_endpoints(db_session: AsyncSession, test_user: User):
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@example.com",
         first_name="Other",
