@@ -24,7 +24,7 @@ async def grant_unlimited_access(email: str):
 
         if not user:
             print(f"❌ User with email '{email}' not found in the database.")
-            print("\n💡 Note: Users are synced from Keycloak to the database on first login.")
+            print("\n💡 Note: Users are synced from Firebase to the database on first login.")
             print("   The user needs to log in at least once before you can grant unlimited access.")
             print("\n   After the user logs in, run this script again.")
             return False

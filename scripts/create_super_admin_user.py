@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """
-Create a SUPER ADMIN user in Keycloak + the local DB.
+Create a SUPER ADMIN user in Firebase Authentication + the local DB.
 
 A super_admin has platform-wide back-office access (analytics, cross-tenant
-user management, infra controls). The `admin` role is reserved for the future
+user management, infra controls). The `admin` role is reserved for the
 organization-scoped admin tier.
 
-- Creates (or reuses) the Keycloak user
-- Ensures the `super_admin` realm role exists, then assigns it to the user
-  (so the JWT's realm_access.roles contains "super_admin", which the frontend
-  middleware checks before letting /admin pages render)
-- If the user previously had the bare `admin` role, that assignment is removed
-  so role membership stays clean during the role-model migration
-- Creates (or updates) the matching local DB row with roles="super_admin"
+- Creates (or reuses) the Firebase user (email/password)
+- Sets the `roles` custom claim to ["super_admin"] so it rides in the ID token
+  / session cookie and the frontend middleware lets /admin pages render
+- Creates (or updates) the matching local DB row with roles="super_admin",
+  keyed by firebase_uid
 
 Usage:
     python scripts/create_super_admin_user.py
@@ -21,13 +19,17 @@ Usage:
 
 import asyncio
 import sys
+from pathlib import Path
 
-from keycloak import KeycloakAdmin
-from keycloak.exceptions import KeycloakPostError
+# Allow running directly (`./scripts/create_super_admin_user.py`) by putting
+# the repo root on sys.path so `import app...` resolves.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from firebase_admin import auth as fb_auth
 from sqlalchemy import select
 
 from app.config.database.session import SessionLocal
-from app.config.settings import get_settings, verify_ssl
+from app.config.firebase_config import get_firebase_app
 
 # Import all models so SQLAlchemy can resolve string-based relationships
 # on the User mapper (Subscription, Notification, FCMToken, etc.).
@@ -51,7 +53,7 @@ DEFAULT_LAST_NAME = "Admin"
 DEFAULT_PASSWORD = "admin"
 
 TARGET_ROLE = "super_admin"
-LEGACY_ROLE = "admin"  # If the user still has this from before the rename, strip it.
+LEGACY_ROLE = "admin"
 
 
 async def create_super_admin_user(
@@ -61,101 +63,69 @@ async def create_super_admin_user(
     last_name: str,
     password: str,
 ) -> None:
-    settings = get_settings()
+    if get_firebase_app() is None:
+        print("   ❌ Firebase Admin SDK not configured (FIREBASE_SERVICE_ACCOUNT_BASE64).")
+        return
 
-    kc_admin = KeycloakAdmin(
-        server_url=settings.keycloak_server_url,
-        username=settings.keycloak_admin_username,
-        password=settings.keycloak_admin_password,
-        realm_name=settings.keycloak_realm,
-        user_realm_name="master",
-        verify=verify_ssl,
-    )
+    display_name = f"{first_name} {last_name}".strip()
 
-    # ── Step 1: Create (or reuse) Keycloak user ─────────────────────
-    print("\n🔑 Creating user in Keycloak …")
-    keycloak_id: str | None = None
-
+    # ── Step 1: Create (or reuse) the Firebase user ─────────────────
+    print("\n🔥 Creating user in Firebase …")
     try:
-        keycloak_id = kc_admin.create_user(
-            {
-                "email": email,
-                "username": username,
-                "firstName": first_name,
-                "lastName": last_name,
-                "enabled": True,
-                "emailVerified": True,
-                "credentials": [{"type": "password", "value": password, "temporary": False}],
-            }
+        record = fb_auth.create_user(
+            email=email,
+            password=password,
+            display_name=display_name,
+            email_verified=True,
         )
-        print(f"   ✅ Keycloak user created — ID: {keycloak_id}")
-    except KeycloakPostError as e:
-        if "User exists" in str(e) or "409" in str(e):
-            users = kc_admin.get_users({"username": username, "exact": True})
-            if not users:
-                users = kc_admin.get_users({"email": email, "exact": True})
-            if users:
-                keycloak_id = users[0]["id"]
-                print(f"   ℹ️  Keycloak user already exists — ID: {keycloak_id}")
-                try:
-                    kc_admin.set_user_password(user_id=keycloak_id, password=password, temporary=False)
-                    print("   ✅ Password reset to requested value")
-                except Exception as pw_err:
-                    print(f"   ⚠️  Could not reset password: {pw_err}")
-            else:
-                print("   ❌ User exists in Keycloak but lookup failed.")
-                return
-        else:
-            print(f"   ❌ Keycloak error: {e}")
-            return
+        firebase_uid = record.uid
+        print(f"   ✅ Firebase user created — UID: {firebase_uid}")
+    except fb_auth.EmailAlreadyExistsError:
+        record = fb_auth.get_user_by_email(email)
+        firebase_uid = record.uid
+        print(f"   ℹ️  Firebase user already exists — UID: {firebase_uid}")
+        try:
+            fb_auth.update_user(firebase_uid, password=password, email_verified=True)
+            print("   ✅ Password reset to requested value")
+        except Exception as pw_err:
+            print(f"   ⚠️  Could not reset password: {pw_err}")
 
-    assert keycloak_id is not None
+    # ── Step 2: Set the super_admin custom claim ────────────────────
+    print(f"\n🛡️  Setting '{TARGET_ROLE}' custom claim …")
+    existing_claims = dict(record.custom_claims or {})
+    existing_claims["roles"] = [TARGET_ROLE]
+    fb_auth.set_custom_user_claims(firebase_uid, existing_claims)
+    print("   ✅ Claim set")
 
-    # ── Step 2: Ensure the `super_admin` realm role exists ──────────
-    print(f"\n🛡️  Ensuring '{TARGET_ROLE}' realm role exists …")
-    try:
-        kc_admin.get_realm_role(TARGET_ROLE)
-        print(f"   ℹ️  Realm role '{TARGET_ROLE}' already exists")
-    except Exception:
-        kc_admin.create_realm_role({"name": TARGET_ROLE, "description": "Platform-wide back-office admin"})
-        print(f"   ✅ Created realm role '{TARGET_ROLE}'")
-
-    # ── Step 3: Assign `super_admin` and strip legacy `admin` ───────
-    print(f"\n🎟️  Assigning '{TARGET_ROLE}' realm role …")
-    target_role = kc_admin.get_realm_role(TARGET_ROLE)
-    kc_admin.assign_realm_roles(user_id=keycloak_id, roles=[target_role])
-    print("   ✅ Role assigned")
-
-    try:
-        legacy_role = kc_admin.get_realm_role(LEGACY_ROLE)
-        current_roles = kc_admin.get_realm_roles_of_user(user_id=keycloak_id)
-        if any(r.get("name") == LEGACY_ROLE for r in current_roles):
-            kc_admin.delete_realm_roles_of_user(user_id=keycloak_id, roles=[legacy_role])
-            print(f"   ✅ Removed stale '{LEGACY_ROLE}' realm role assignment")
-    except Exception:
-        # Legacy role doesn't exist or user never had it — both fine.
-        pass
-
-    # ── Step 4: Create (or update) the local DB row ─────────────────
+    # ── Step 3: Create (or update) the local DB row ─────────────────
     print("\n💾 Syncing user into local DB …")
     async with SessionLocal() as session:
-        result = await session.execute(select(User).where(User.keycloak_id == keycloak_id))
-        user = result.scalar_one_or_none()
+        # Match an existing row by firebase_uid OR email. The email lookup
+        # reconciles the case where a row already exists under a different
+        # (e.g. pre-migration / placeholder) uid — we rebind it to the real
+        # Firebase uid rather than colliding on the unique email constraint.
+        result = await session.execute(
+            select(User).where((User.firebase_uid == firebase_uid) | (User.email == email))
+        )
+        user = result.scalars().first()
 
         if user:
+            if user.firebase_uid != firebase_uid:
+                print(f"   ℹ️  Rebinding existing row from uid {user.firebase_uid} → {firebase_uid}")
+            user.firebase_uid = firebase_uid
             user.email = email
             user.username = username
             user.first_name = first_name
             user.last_name = last_name
             existing_roles = set(user.get_roles_list())
-            existing_roles.discard(LEGACY_ROLE)  # strip stale `admin`
+            existing_roles.discard(LEGACY_ROLE)
             existing_roles.add(TARGET_ROLE)
             user.set_roles_list(sorted(existing_roles))
             user.is_active = True
             print(f"   ℹ️  Updated existing DB user — ID: {user.id} (roles: {user.roles})")
         else:
             user = User(
-                keycloak_id=keycloak_id,
+                firebase_uid=firebase_uid,
                 email=email,
                 username=username,
                 first_name=first_name,
@@ -173,13 +143,11 @@ async def create_super_admin_user(
     print("  ✅ Super Admin user is ready")
     print("=" * 60)
     print(f"  Email:        {email}")
-    print(f"  Username:     {username}")
     print(f"  Password:     {password}")
-    print(f"  Keycloak ID:  {keycloak_id}")
-    print(f"  DB role:      {TARGET_ROLE}")
-    print(f"  Realm role:   {TARGET_ROLE}")
+    print(f"  Firebase UID: {firebase_uid}")
+    print(f"  Role:         {TARGET_ROLE}")
     print("=" * 60)
-    print("\n  👉 Log in at the frontend; the 'Admin' link should appear\n")
+    print("\n  👉 Sign in at the frontend; the 'Admin' link should appear\n")
 
 
 async def main() -> None:
