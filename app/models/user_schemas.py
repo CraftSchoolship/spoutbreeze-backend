@@ -12,13 +12,13 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    keycloak_id: str
+    firebase_uid: str
     roles: str
 
 
 class UserResponse(UserBase):
     id: UUID
-    keycloak_id: str
+    firebase_uid: str
     roles: str
     created_at: datetime | None = None
     is_active: bool

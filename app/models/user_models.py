@@ -32,7 +32,7 @@ class User(Base):
         index=True,
         nullable=False,
     )
-    keycloak_id: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    firebase_uid: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     first_name: Mapped[str] = mapped_column(String, nullable=False)

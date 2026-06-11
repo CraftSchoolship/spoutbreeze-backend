@@ -22,10 +22,10 @@ class UserServiceCached:
         res = await db.execute(stmt)
         return res.scalars().first()
 
-    @cached_db(ttl=settings.cache_ttl_user, key_prefix="user_keycloak")  # 15 minutes
-    async def get_user_by_keycloak_id_cached(self, keycloak_id: str, db: AsyncSession) -> User | None:
-        """Get user by Keycloak ID with caching"""
-        stmt = select(User).where(User.keycloak_id == keycloak_id)
+    @cached_db(ttl=settings.cache_ttl_user, key_prefix="user_firebase")  # 15 minutes
+    async def get_user_by_firebase_uid_cached(self, firebase_uid: str, db: AsyncSession) -> User | None:
+        """Get user by Firebase UID with caching"""
+        stmt = select(User).where(User.firebase_uid == firebase_uid)
         res = await db.execute(stmt)
         return res.scalars().first()
 
@@ -42,11 +42,11 @@ class UserServiceCached:
         res = await db.execute(stmt)
         return list(res.scalars().all())  # Convert to list for serialization
 
-    async def invalidate_user_cache(self, user_id: UUID, keycloak_id: str | None = None):
+    async def invalidate_user_cache(self, user_id: UUID, firebase_uid: str | None = None):
         """Invalidate all caches for a specific user.
 
         ``cached_db`` builds keys as ``{prefix}:{func_name}:{md5(args)}`` —
-        the user_id / keycloak_id never appears literally in the key, so a
+        the user_id / firebase_uid never appears literally in the key, so a
         substring pattern like ``user_profile:*<user_id>*`` matches nothing.
         Dropping the whole prefix is the only correct option. With a small
         user count this is fine; even at scale the 15-min TTL bounds the
@@ -54,8 +54,8 @@ class UserServiceCached:
         """
         await cache.delete_pattern("user_profile:*")
         await cache.delete_pattern("user_roles:*")
-        if keycloak_id:
-            await cache.delete_pattern("user_keycloak:*")
+        if firebase_uid:
+            await cache.delete_pattern("user_firebase:*")
         await cache.delete_pattern("users_list:*")
         logger.info(f"Invalidated user caches for {user_id}")
 
@@ -65,7 +65,7 @@ class UserServiceCached:
         await db.execute(stmt)
         await db.commit()
         user = await self.get_user_by_id_cached(user_id, db)
-        await self.invalidate_user_cache(user_id, user.keycloak_id if user else None)
+        await self.invalidate_user_cache(user_id, user.firebase_uid if user else None)
         return user
 
     async def update_user_role(self, user_id: UUID, new_role: str, db: AsyncSession):
@@ -74,7 +74,7 @@ class UserServiceCached:
         await db.execute(stmt)
         await db.commit()
         user = await self.get_user_by_id_cached(user_id, db)
-        await self.invalidate_user_cache(user_id, user.keycloak_id if user else None)
+        await self.invalidate_user_cache(user_id, user.firebase_uid if user else None)
         return user
 
 
