@@ -38,7 +38,7 @@ router = APIRouter(prefix="/api", tags=["Users"])
 
 def get_current_user_roles(current_user: User = Depends(get_current_user)) -> list[str]:
     """
-    Get roles from the database (stored from Keycloak) with caching
+    Get roles from the database (stored from Firebase claims) with caching
     """
     user_roles = current_user.get_roles_list()
     logger.info(f"User {current_user.username} roles: {user_roles}")
@@ -114,10 +114,10 @@ async def update_user_profile(
                 detail="No profile data provided to update",
             )
 
-        logger.info(f"[{request_id}] Updating Keycloak profile for user: {current_user.keycloak_id}")
+        logger.info(f"[{request_id}] Updating Firebase profile for user: {current_user.firebase_uid}")
 
-        # Update user in Keycloak first
-        await auth_service.update_user_profile(user_id=current_user.keycloak_id, user_data=profile_update_data)
+        # Update user in Firebase first
+        await auth_service.update_user_profile(user_id=current_user.firebase_uid, user_data=profile_update_data)
 
         logger.info(f"[{request_id}] Updating database profile for user: {current_user.username}")
 
@@ -209,7 +209,7 @@ async def delete_user_by_admin(
 
     Mirrors the self-delete flow in DELETE /me:
     1. Cancel any active Stripe subscription (best-effort)
-    2. Delete the user from Keycloak
+    2. Delete the user from Firebase
     3. Delete the user and all related data from the database (cascade)
     4. Invalidate user caches
     """
@@ -252,17 +252,17 @@ async def delete_user_by_admin(
         except Exception as e:
             logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
 
-        if target_user.keycloak_id:
-            await auth_service.delete_user(target_user.keycloak_id)
-            logger.info(f"[{request_id}] Deleted user {target_user.keycloak_id} from Keycloak")
+        if target_user.firebase_uid:
+            await auth_service.delete_user(target_user.firebase_uid)
+            logger.info(f"[{request_id}] Deleted user {target_user.firebase_uid} from Firebase")
 
-        target_keycloak_id = target_user.keycloak_id
+        target_firebase_uid = target_user.firebase_uid
         await db.delete(target_user)
         await db.commit()
         logger.info(f"[{request_id}] Deleted user {user_id} from database")
 
         try:
-            await user_service_cached.invalidate_user_cache(user_id, target_keycloak_id)
+            await user_service_cached.invalidate_user_cache(user_id, target_firebase_uid)
         except Exception as e:
             logger.warning(f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}")
 
@@ -329,16 +329,16 @@ async def update_user_role(
                 detail="Cannot modify your own role",
             )
 
-        logger.info(f"[{request_id}] Updating role in Keycloak for user: {target_user.keycloak_id}")
+        logger.info(f"[{request_id}] Updating role (custom claim) for user: {target_user.firebase_uid}")
 
-        # Update role in Keycloak first
+        # Update role (Firebase custom claim) first
         try:
-            await auth_service.update_user_role(user_id=target_user.keycloak_id, new_role=new_role)
+            await auth_service.update_user_role(user_id=target_user.firebase_uid, new_role=new_role)
         except HTTPException as e:
-            logger.error(f"[{request_id}] Keycloak role update failed: {e.detail}")
+            logger.error(f"[{request_id}] Role update failed: {e.detail}")
             raise HTTPException(
                 status_code=e.status_code,
-                detail=f"Failed to update role in Keycloak: {e.detail}",
+                detail=f"Failed to update role: {e.detail}",
             )
 
         logger.info(f"[{request_id}] Updating role in database for user: {target_user.username}")
@@ -398,7 +398,7 @@ async def assign_user_organization(
     await db.refresh(target_user)
 
     try:
-        await user_service_cached.invalidate_user_cache(user_id, target_user.keycloak_id)
+        await user_service_cached.invalidate_user_cache(user_id, target_user.firebase_uid)
     except Exception as e:
         logger.warning(f"[{request_id}] Failed to invalidate caches after org change: {e}")
 
@@ -421,11 +421,11 @@ async def invalidate_user_cache(
     Manually invalidate cache for a specific user (Super Admin only)
     """
     try:
-        # Get user to find keycloak_id using the properly injected db session
+        # Get user to find firebase_uid using the properly injected db session
         user = await user_service_cached.get_user_by_id_cached(user_id, db)
-        keycloak_id = user.keycloak_id if user else None
+        firebase_uid = user.firebase_uid if user else None
 
-        await user_service_cached.invalidate_user_cache(user_id, keycloak_id)
+        await user_service_cached.invalidate_user_cache(user_id, firebase_uid)
 
         logger.info(f"Admin {current_user.username} invalidated cache for user {user_id}")
         return {"message": f"Cache invalidated for user {user_id}"}
@@ -533,7 +533,7 @@ async def update_user_resolution(
         await db.refresh(user)
 
         # Invalidate cache - THIS IS CRITICAL
-        await user_service_cached.invalidate_user_cache(user.id, user.keycloak_id)
+        await user_service_cached.invalidate_user_cache(user.id, user.firebase_uid)
 
         logger.info(
             f"[{request_id}] Resolution updated successfully for user: {user.username} - new value: {user.default_resolution}"
@@ -568,7 +568,7 @@ async def delete_account(
 
     This will:
     1. Cancel any active Stripe subscription immediately
-    2. Delete the user from Keycloak
+    2. Delete the user from Firebase
     3. Delete the user and all related data from the database (cascade)
     4. Invalidate all user caches
     5. Clear authentication cookies
@@ -591,9 +591,9 @@ async def delete_account(
             # Log but don't fail — subscription cleanup is best-effort
             logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
 
-        # Step 2: Delete user from Keycloak
-        await auth_service.delete_user(current_user.keycloak_id)
-        logger.info(f"[{request_id}] Deleted user {current_user.keycloak_id} from Keycloak")
+        # Step 2: Delete user from Firebase
+        await auth_service.delete_user(current_user.firebase_uid)
+        logger.info(f"[{request_id}] Deleted user {current_user.firebase_uid} from Firebase")
 
         # Step 3: Delete user from database (cascade handles all related records)
         # Re-fetch the user to get a persistent instance attached to this session
@@ -607,7 +607,7 @@ async def delete_account(
 
         # Step 4: Invalidate all user caches
         try:
-            await user_service_cached.invalidate_user_cache(current_user.id, current_user.keycloak_id)
+            await user_service_cached.invalidate_user_cache(current_user.id, current_user.firebase_uid)
         except Exception as e:
             logger.warning(f"[{request_id}] Failed to invalidate caches (continuing): {str(e)}")
 

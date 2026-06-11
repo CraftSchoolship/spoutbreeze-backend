@@ -152,6 +152,11 @@ class DomainVerificationStatus(BaseModel):
 class CreateMyOrgResponse(BaseModel):
     organization: OrganizationResponse
     verification: DomainVerificationStatus
+    # The caller was just granted the `admin` role as a Firebase custom claim.
+    # Their current session cookie predates the claim, so the frontend must
+    # force-refresh the ID token and re-establish the session before relying
+    # on the new role (e.g. navigating to /my-org).
+    session_refresh_required: bool = True
 
 
 class OrganizationInviteResponse(BaseModel):

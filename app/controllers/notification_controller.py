@@ -190,14 +190,22 @@ async def notification_websocket(websocket: WebSocket, db: AsyncSession = Depend
     await websocket.accept()
     user_id: UUID | None = None
 
-    async def _resolve_user(token: str) -> UUID | None:
-        """Validate JWT and return the User's UUID, or None on failure."""
+    async def _resolve_user(token: str, is_session_cookie: bool) -> UUID | None:
+        """Resolve a User UUID from a Firebase credential, or None on failure.
+
+        ``is_session_cookie`` selects the verifier: the upgrade-request cookie
+        carries a Firebase *session cookie*, while the JSON auth-message token
+        is a raw Firebase *ID token*.
+        """
         try:
-            payload = await auth_service.validate_token(token)
-            keycloak_id = payload.get("sub")
-            if not keycloak_id:
+            if is_session_cookie:
+                payload = await auth_service.verify_session_cookie(token)
+            else:
+                payload = await auth_service.verify_id_token(token)
+            firebase_uid = payload.get("uid") or payload.get("sub")
+            if not firebase_uid:
                 return None
-            result = await db.execute(select(User).where(User.keycloak_id == keycloak_id))
+            result = await db.execute(select(User).where(User.firebase_uid == firebase_uid))
             user = result.scalars().first()
             return user.id if user else None
         except Exception:
@@ -216,9 +224,9 @@ async def notification_websocket(websocket: WebSocket, db: AsyncSession = Depend
         # ------------------------------------------------------------------
         # Path 1: cookie already present in the upgrade request
         # ------------------------------------------------------------------
-        cookie_token = websocket.cookies.get("access_token")
+        cookie_token = websocket.cookies.get("session")
         if cookie_token:
-            user_id = await _resolve_user(cookie_token)
+            user_id = await _resolve_user(cookie_token, is_session_cookie=True)
 
         # ------------------------------------------------------------------
         # Path 2: wait for a JSON auth message (cross-origin fallback)
@@ -238,7 +246,7 @@ async def notification_websocket(websocket: WebSocket, db: AsyncSession = Depend
 
             msg_token = auth_msg.get("token")
             if msg_token:
-                user_id = await _resolve_user(msg_token)
+                user_id = await _resolve_user(msg_token, is_session_cookie=False)
 
             if user_id is None:
                 await websocket.close(code=4003, reason="Authentication failed")
