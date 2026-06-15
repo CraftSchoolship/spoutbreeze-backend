@@ -160,9 +160,7 @@ async def test_delete_user_not_found_is_success(monkeypatch, svc):
 
 async def test_logout_revokes_refresh_tokens(monkeypatch, svc):
     captured = {}
-    monkeypatch.setattr(
-        auth_module.fb_auth, "revoke_refresh_tokens", lambda uid: captured.update({"uid": uid})
-    )
+    monkeypatch.setattr(auth_module.fb_auth, "revoke_refresh_tokens", lambda uid: captured.update({"uid": uid}))
     await svc.logout("uid-1")
     assert captured["uid"] == "uid-1"
 

@@ -118,9 +118,7 @@ class AuthService:
         self._ensure_app()
         try:
             settings = fb_auth.ActionCodeSettings(url=continue_url)
-            link = await asyncio.to_thread(
-                fb_auth.generate_password_reset_link, email, settings
-            )
+            link = await asyncio.to_thread(fb_auth.generate_password_reset_link, email, settings)
         except fb_auth.UserNotFoundError:
             return None
         except Exception as e:
@@ -142,9 +140,7 @@ class AuthService:
         self._ensure_app()
         try:
             settings = fb_auth.ActionCodeSettings(url=continue_url)
-            link = await asyncio.to_thread(
-                fb_auth.generate_email_verification_link, email, settings
-            )
+            link = await asyncio.to_thread(fb_auth.generate_email_verification_link, email, settings)
         except fb_auth.UserNotFoundError:
             return None
         except Exception as e:

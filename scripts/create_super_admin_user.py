@@ -104,9 +104,7 @@ async def create_super_admin_user(
         # reconciles the case where a row already exists under a different
         # (e.g. pre-migration / placeholder) uid — we rebind it to the real
         # Firebase uid rather than colliding on the unique email constraint.
-        result = await session.execute(
-            select(User).where((User.firebase_uid == firebase_uid) | (User.email == email))
-        )
+        result = await session.execute(select(User).where((User.firebase_uid == firebase_uid) | (User.email == email)))
         user = result.scalars().first()
 
         if user:
