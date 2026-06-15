@@ -10,7 +10,7 @@ from app.main import app
 class DummyUser:
     def __init__(self, username: str, roles=None):
         self.id = uuid.UUID("00000000-0000-0000-0000-000000000123")
-        self.keycloak_id = "kc-123"
+        self.firebase_uid = "kc-123"
         self.username = username
         self.email = f"{username}@example.com"
         self.first_name = username.title()
@@ -71,7 +71,7 @@ async def test_users_allowed_for_super_admin(client, monkeypatch):
                     "last_name": "A",
                     "roles": "admin",
                     "is_active": True,
-                    "keycloak_id": "kc-1",
+                    "firebase_uid": "kc-1",
                 }
             ]
 

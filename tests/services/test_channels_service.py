@@ -75,7 +75,7 @@ async def test_get_channels_scoped_to_organization(db_session: AsyncSession, tes
     test_user.organization_id = org.id
     same_org_user = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"same-{uuid.uuid4()}",
         email=f"same-{uuid.uuid4()}@example.com",
         first_name="Same",
@@ -86,7 +86,7 @@ async def test_get_channels_scoped_to_organization(db_session: AsyncSession, tes
     )
     outsider = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"out-{uuid.uuid4()}",
         email=f"out-{uuid.uuid4()}@example.com",
         first_name="Out",
@@ -121,7 +121,7 @@ async def test_get_channels_scoped_to_organization(db_session: AsyncSession, tes
 async def test_get_channels_without_org_returns_only_own(db_session: AsyncSession, test_user: User):
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@example.com",
         first_name="Other",
@@ -204,7 +204,7 @@ async def test_update_channel_not_owner_returns_none(db_session: AsyncSession, t
     # Another user and a channel owned by them
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@example.com",
         first_name="Other",
@@ -266,7 +266,7 @@ async def test_get_channel_recordings_wrong_owner(db_session: AsyncSession, test
     # Create channel owned by other user
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@example.com",
         first_name="Other",

@@ -23,50 +23,49 @@ def test_payment_and_user_imports_resolve_to_the_same_function():
 
 @pytest.mark.anyio
 async def test_no_token_returns_401(client):
-    """No Authorization header, no access_token cookie → 401."""
+    """No Authorization header, no session cookie → 401."""
     resp = await client.get("/api/payments/subscription")
     assert resp.status_code == 401
 
 
 @pytest.mark.anyio
 async def test_authorization_header_path_is_consulted(client, monkeypatch):
-    """Header-supplied Bearer token must reach the validator. Validator is
-    stubbed to confirm the wiring without involving real Keycloak."""
+    """A Bearer Firebase ID token must reach `verify_id_token`. Stubbed to
+    confirm the wiring without involving real Firebase."""
     from app.api import dependencies
 
     seen_tokens: list[str] = []
 
-    async def fake_validate(token: str):
+    async def fake_verify_id_token(token: str, check_revoked: bool = False):
         seen_tokens.append(token)
-        # Return a payload with no `sub` so the dep raises 401 cleanly —
-        # we only care here that the header path was taken.
-        return {"sub": None}
+        # No `uid` → the dep raises 401 cleanly; we only assert the wiring.
+        return {"uid": None}
 
-    monkeypatch.setattr(dependencies._auth_service, "validate_token", fake_validate)
+    monkeypatch.setattr(dependencies._auth_service, "verify_id_token", fake_verify_id_token)
 
     resp = await client.get(
         "/api/payments/subscription",
         headers={"Authorization": "Bearer header-token-xyz"},
     )
     assert seen_tokens == ["header-token-xyz"], "Authorization header was not consulted by the unified dependency"
-    assert resp.status_code == 401  # because `sub` was None
+    assert resp.status_code == 401  # because `uid` was None
 
 
 @pytest.mark.anyio
 async def test_cookie_path_is_consulted_when_no_header(client, monkeypatch):
-    """When no Authorization header is supplied, fall back to the
-    access_token cookie."""
+    """When no Authorization header is supplied, fall back to the Firebase
+    session cookie (`session`), verified via `verify_session_cookie`."""
     from app.api import dependencies
 
     seen_tokens: list[str] = []
 
-    async def fake_validate(token: str):
+    async def fake_verify_session_cookie(token: str, check_revoked: bool = True):
         seen_tokens.append(token)
-        return {"sub": None}
+        return {"uid": None}
 
-    monkeypatch.setattr(dependencies._auth_service, "validate_token", fake_validate)
+    monkeypatch.setattr(dependencies._auth_service, "verify_session_cookie", fake_verify_session_cookie)
 
-    client.cookies.set("access_token", "cookie-token-abc")
+    client.cookies.set("session", "cookie-token-abc")
     try:
         resp = await client.get("/api/payments/subscription")
     finally:
@@ -77,19 +76,24 @@ async def test_cookie_path_is_consulted_when_no_header(client, monkeypatch):
 
 @pytest.mark.anyio
 async def test_header_takes_precedence_over_cookie(client, monkeypatch):
-    """Both supplied → header wins. Matters for cross-origin API callers
-    that may also have a stale cookie sitting around."""
+    """Both supplied → header (ID token) wins over the session cookie."""
     from app.api import dependencies
 
-    seen_tokens: list[str] = []
+    id_tokens: list[str] = []
+    session_cookies: list[str] = []
 
-    async def fake_validate(token: str):
-        seen_tokens.append(token)
-        return {"sub": None}
+    async def fake_verify_id_token(token: str, check_revoked: bool = False):
+        id_tokens.append(token)
+        return {"uid": None}
 
-    monkeypatch.setattr(dependencies._auth_service, "validate_token", fake_validate)
+    async def fake_verify_session_cookie(token: str, check_revoked: bool = True):
+        session_cookies.append(token)
+        return {"uid": None}
 
-    client.cookies.set("access_token", "cookie-token-should-be-ignored")
+    monkeypatch.setattr(dependencies._auth_service, "verify_id_token", fake_verify_id_token)
+    monkeypatch.setattr(dependencies._auth_service, "verify_session_cookie", fake_verify_session_cookie)
+
+    client.cookies.set("session", "cookie-token-should-be-ignored")
     try:
         resp = await client.get(
             "/api/payments/subscription",
@@ -97,5 +101,6 @@ async def test_header_takes_precedence_over_cookie(client, monkeypatch):
         )
     finally:
         client.cookies.clear()
-    assert seen_tokens == ["header-wins"]
+    assert id_tokens == ["header-wins"]
+    assert session_cookies == [], "session cookie should be ignored when a Bearer header is present"
     assert resp.status_code == 401

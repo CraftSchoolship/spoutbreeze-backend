@@ -19,7 +19,7 @@ from app.models.user_models import User
 
 async def _make_user(db_session, suffix: str) -> User:
     user = User(
-        keycloak_id=f"kc-{suffix}",
+        firebase_uid=f"kc-{suffix}",
         username=f"user-{suffix}",
         email=f"{suffix}@example.com",
         first_name="F",

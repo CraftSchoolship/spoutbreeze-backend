@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
 Script to create a test user with an expired free trial.
-This registers the user in both Keycloak and the local DB, then sets up
-an expired 14-day free trial so the user can never use the free plan again.
+This registers the user in both Firebase Authentication and the local DB, then
+sets up an expired 14-day free trial so the user can never use the free plan
+again.
 
 Usage:
     python scripts/create_expired_trial_user.py
@@ -14,12 +15,12 @@ import sys
 import uuid
 from datetime import timedelta
 
-from keycloak import KeycloakAdmin
-from keycloak.exceptions import KeycloakPostError
+from firebase_admin import auth as fb_auth
 from sqlalchemy import select
 
 from app.config.database.session import SessionLocal
-from app.config.settings import get_settings, verify_ssl
+from app.config.firebase_config import get_firebase_app
+from app.config.settings import get_settings
 from app.models.payment_models import (
     Subscription,
     SubscriptionPlan,
@@ -45,72 +46,48 @@ async def create_expired_trial_user(
     password: str = DEFAULT_PASSWORD,
 ):
     """
-    1. Create the user in Keycloak
+    1. Create the user in Firebase
     2. Create the user in the local DB
     3. Create an expired free trial subscription
     4. Mark has_used_free_trial = True
     """
     settings = get_settings()
 
-    # Create a KeycloakAdmin instance using admin credentials (master realm)
-    kc_admin = KeycloakAdmin(
-        server_url=settings.keycloak_server_url,
-        username=settings.keycloak_admin_username,
-        password=settings.keycloak_admin_password,
-        realm_name=settings.keycloak_realm,
-        verify=verify_ssl,
-    )
+    if get_firebase_app() is None:
+        print("   ❌ Firebase Admin SDK not configured (FIREBASE_SERVICE_ACCOUNT_BASE64).")
+        return
 
-    # ── Step 1: Create in Keycloak ──────────────────────────────────
-    print("\n🔑 Creating user in Keycloak …")
-    keycloak_id = None
+    # ── Step 1: Create in Firebase ──────────────────────────────────
+    print("\n🔥 Creating user in Firebase …")
+    display_name = f"{first_name} {last_name}".strip()
 
     try:
-        keycloak_id = kc_admin.create_user(
-            {
-                "email": email,
-                "username": username,
-                "firstName": first_name,
-                "lastName": last_name,
-                "enabled": True,
-                "emailVerified": True,
-                "credentials": [
-                    {
-                        "type": "password",
-                        "value": password,
-                        "temporary": False,
-                    }
-                ],
-            }
+        record = fb_auth.create_user(
+            email=email,
+            password=password,
+            display_name=display_name,
+            email_verified=True,
         )
-        print(f"   ✅ Keycloak user created — ID: {keycloak_id}")
-    except KeycloakPostError as e:
-        if "User exists" in str(e) or "409" in str(e):
-            # User already exists — look up by username
-            users = kc_admin.get_users({"username": username, "exact": True})
-            if users:
-                keycloak_id = users[0]["id"]
-                print(f"   ℹ️  Keycloak user already exists — ID: {keycloak_id}")
-            else:
-                print("   ❌ Keycloak user exists but could not be looked up.")
-                return
-        else:
-            print(f"   ❌ Keycloak error: {e}")
-            return
+        firebase_uid = record.uid
+        print(f"   ✅ Firebase user created — UID: {firebase_uid}")
+    except fb_auth.EmailAlreadyExistsError:
+        record = fb_auth.get_user_by_email(email)
+        firebase_uid = record.uid
+        print(f"   ℹ️  Firebase user already exists — UID: {firebase_uid}")
 
     # ── Step 2 & 3: Create in DB + expired subscription ─────────────
     print("\n💾 Creating user & expired subscription in DB …")
 
     async with SessionLocal() as session:
         # Check if user already in DB
-        result = await session.execute(select(User).where(User.keycloak_id == keycloak_id))
+        result = await session.execute(select(User).where(User.firebase_uid == firebase_uid))
         user = result.scalar_one_or_none()
 
         if user:
             print(f"   ℹ️  User already in DB — ID: {user.id}")
         else:
             user = User(
-                keycloak_id=keycloak_id,
+                firebase_uid=firebase_uid,
                 email=email,
                 username=username,
                 first_name=first_name,
@@ -188,7 +165,7 @@ async def create_expired_trial_user(
     print(f"  Email:             {email}")
     print(f"  Username:          {username}")
     print(f"  Password:          {password}")
-    print(f"  Keycloak ID:       {keycloak_id}")
+    print(f"  Firebase UID:      {firebase_uid}")
     print("  Free trial:        EXPIRED (used & cannot be restarted)")
     print("  has_used_free_trial: True")
     print(f"{'=' * 60}")

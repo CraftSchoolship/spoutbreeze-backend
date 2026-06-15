@@ -55,7 +55,7 @@ async def test_user_update_triggers_invalidation(fake_cache, db_session):
     # Seed user
     u = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username="cacheuser",
         email="c@example.com",
         first_name="First",

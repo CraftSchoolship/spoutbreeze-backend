@@ -138,7 +138,7 @@ async def test_start_event_wrong_owner_raises(db_session: AsyncSession, test_use
     # Create a second user
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@ex.com",
         first_name="Other",
@@ -257,7 +257,7 @@ async def test_update_event_add_organizer_and_title(db_session: AsyncSession, te
     # Add another user to act as organizer
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"org-{uuid.uuid4()}",
         email=f"org-{uuid.uuid4()}@ex.com",
         first_name="Org",
@@ -291,7 +291,7 @@ async def test_update_event_wrong_owner_raises(db_session: AsyncSession, test_us
     # Different user
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"other-{uuid.uuid4()}",
         email=f"other-{uuid.uuid4()}@ex.com",
         first_name="Other",
@@ -339,7 +339,7 @@ async def test_delete_event_wrong_owner_raises(db_session: AsyncSession, test_us
 
     other = User(
         id=uuid.uuid4(),
-        keycloak_id=f"kc-{uuid.uuid4()}",
+        firebase_uid=f"kc-{uuid.uuid4()}",
         username=f"otherdel-{uuid.uuid4()}",
         email=f"otherdel-{uuid.uuid4()}@ex.com",
         first_name="Other",

@@ -28,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.config.database.session import get_db
 from app.config.logger_config import get_logger
-from app.controllers.auth_controller import set_auth_cookies
 from app.models.admin_schemas import AnalyticsOverview
 from app.models.organization_models import (
     Organization,
@@ -227,15 +226,15 @@ async def update_my_organization_user_role(
 
     logger.info(f"[{request_id}] Org admin {current_user.username} changing role of {target_user.username} to {new_role}")
 
-    # Keycloak first, then DB — same ordering as super-admin role updates so
-    # a Keycloak failure leaves the DB untouched.
+    # the auth backend first, then DB — same ordering as super-admin role updates so
+    # an auth backend failure leaves the DB untouched.
     try:
-        await auth_service.update_user_role(user_id=target_user.keycloak_id, new_role=new_role)
+        await auth_service.update_user_role(user_id=target_user.firebase_uid, new_role=new_role)
     except HTTPException as e:
-        logger.error(f"[{request_id}] Keycloak role update failed: {e.detail}")
+        logger.error(f"[{request_id}] Role update failed: {e.detail}")
         raise HTTPException(
             status_code=e.status_code,
-            detail=f"Failed to update role in Keycloak: {e.detail}",
+            detail=f"Failed to update role: {e.detail}",
         ) from e
 
     updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
@@ -302,7 +301,7 @@ async def create_my_organization(
     Self-serve organization creation.
 
     The caller becomes the org's first ``admin`` and is upgraded to the
-    ``admin`` role in both Keycloak and the database atomically with the
+    ``admin`` role in both Firebase and the database atomically with the
     org creation. We refresh the caller's auth cookies before returning so
     their next request carries a JWT with the new role baked in — without
     this, middleware would still see the stale ``moderator`` role and would
@@ -320,17 +319,17 @@ async def create_my_organization(
             detail=("You already belong to an organization. Leave or be reassigned before creating a new one."),
         )
 
-    # Step 1: Promote the caller to `admin` in Keycloak FIRST. If this fails,
+    # Step 1: Promote the caller to `admin` in Firebase FIRST. If this fails,
     # we never touch the DB — no half-created orgs, no orphan admins. The
     # auth_service raises HTTPException on failure which propagates as-is to
-    # the client (typically a 500 with the Keycloak error detail).
+    # the client (typically a 500 with the auth backend error detail).
     logger.info(
-        f"[{request_id}] Granting 'admin' role in Keycloak for {current_user.username} before creating org '{payload.name}'"
+        f"[{request_id}] Granting admin role in Firebase for {current_user.username} before creating org '{payload.name}'"
     )
-    await auth_service.update_user_role(user_id=current_user.keycloak_id, new_role="admin")
+    await auth_service.update_user_role(user_id=current_user.firebase_uid, new_role="admin")
 
     # Step 2: Atomic DB transaction — org + domain + invite + user mutations
-    # all commit together. If anything fails here we still have the Keycloak
+    # all commit together. If anything fails here we still have the Firebase
     # admin grant in place (acceptable; idempotent on retry, and the user
     # can be assigned an org later by a super-admin).
     token = secrets.token_urlsafe(24)
@@ -365,7 +364,7 @@ async def create_my_organization(
     target_user = user_result.scalar_one()
     target_user.organization_id = org.id
     target_user.has_completed_onboarding = True
-    target_user.set_roles_list(["admin"])  # mirror the Keycloak grant in the DB
+    target_user.set_roles_list(["admin"])  # mirror the Firebase grant in the DB
 
     # Initial invite so the admin has something to share immediately.
     invite = OrganizationInvite(
@@ -383,27 +382,19 @@ async def create_my_organization(
     # role + org assignment. Best-effort; a Redis blip can't roll back the
     # successful commit above.
     try:
-        await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
+        await user_service_cached.invalidate_user_cache(target_user.id, target_user.firebase_uid)
     except Exception as e:
         logger.warning(f"[{request_id}] Cache invalidation after org create failed: {e}")
 
-    # Step 4: mint a fresh access_token so the caller's JWT carries the new
-    # `admin` role. Without this, middleware on the next request would read
-    # the OLD JWT (still says `moderator`) and bounce the user out of
-    # `/my-org`. The refresh_token cookie was set at login; if it's missing
-    # or rejected, we surface a soft warning — the org is still created and
-    # the user can simply sign out + back in to refresh manually.
-    refresh_cookie = request.cookies.get("refresh_token")
-    if refresh_cookie:
-        try:
-            token_data = await auth_service.refresh_token(refresh_cookie)
-            set_auth_cookies(response, token_data)
-            logger.info(f"[{request_id}] Auth cookies refreshed; new JWT carries 'admin' role")
-        except HTTPException as e:
-            logger.warning(
-                f"[{request_id}] Could not refresh auth cookies after org create "
-                f"(user should sign out and back in): {e.detail}"
-            )
+    # Step 4: the new `admin` role was written as a Firebase custom claim in
+    # Step 1, but the caller's CURRENT session cookie was minted from an ID
+    # token issued BEFORE that claim existed, so it still says `moderator`.
+    # Firebase custom claims only appear after the client force-refreshes its
+    # ID token. The frontend therefore re-establishes the session right after
+    # this call returns (auth.currentUser.getIdToken(true) -> POST /api/session);
+    # see the create-org flow in the web app. `session_refresh_required` tells
+    # it to do so before navigating to /my-org.
+    logger.info(f"[{request_id}] Admin claim set; client must refresh session to pick up the 'admin' role")
 
     logger.info(
         f"[{request_id}] User {target_user.username} created org '{org.name}' with pending domain {payload.email_domain}"
@@ -464,7 +455,7 @@ async def join_my_organization(
     await db.commit()
 
     try:
-        await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
+        await user_service_cached.invalidate_user_cache(target_user.id, target_user.firebase_uid)
     except Exception as e:
         logger.warning(f"[{request_id}] Cache invalidation after org join failed: {e}")
 
@@ -489,7 +480,7 @@ async def skip_onboarding(
         target_user.has_completed_onboarding = True
         await db.commit()
         try:
-            await user_service_cached.invalidate_user_cache(target_user.id, target_user.keycloak_id)
+            await user_service_cached.invalidate_user_cache(target_user.id, target_user.firebase_uid)
         except Exception as e:
             logger.warning(f"Cache invalidation after skip-onboarding failed: {e}")
     return {"message": "Onboarding skipped", "statusCode": 200}

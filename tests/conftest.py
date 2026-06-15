@@ -132,7 +132,7 @@ async def test_user(db_session: AsyncSession):
     """Create a test user"""
     user = User(
         id=uuid4(),
-        keycloak_id=f"test-keycloak-id-{uuid4()}",
+        firebase_uid=f"test-firebase-uid-{uuid4()}",
         username=f"testuser-{uuid4()}",
         email=f"test-{uuid4()}@example.com",
         first_name="Test",

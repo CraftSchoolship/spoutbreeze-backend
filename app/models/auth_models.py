@@ -1,65 +1,28 @@
 from pydantic import BaseModel, Field
 
 
-class TokenRequest(BaseModel):
-    """
-    Model for token exchange request
-    """
+class SessionRequest(BaseModel):
+    """Body for establishing a session from a Firebase ID token.
 
-    code: str = Field(..., description="Authorization code from Keycloak")
-    redirect_uri: str = Field(..., description="Redirect URI used in the authorization request")
-    code_verifier: str = Field(..., description="Code verifier used in the authorization request")
-
-
-class TokenResponse(BaseModel):
-    """
-    Model for token exchange response
+    The frontend signs in with the Firebase Web SDK, obtains an ID token via
+    ``user.getIdToken()``, and posts it here. The backend verifies it and mints
+    an httpOnly session cookie. ``first_name`` / ``last_name`` are optional and
+    only used on first sign-up (email/password), since Firebase has no separate
+    name fields for that provider.
     """
 
-    access_token: str
-    expires_in: int
-    refresh_token: str
-    refresh_expires_in: int | None = None
-    token_type: str = "Bearer"
-    user_info: dict
+    id_token: str = Field(..., description="Firebase ID token from the Web SDK")
+    first_name: str | None = Field(None, description="Optional, set on email/password sign-up")
+    last_name: str | None = Field(None, description="Optional, set on email/password sign-up")
 
 
-class User(BaseModel):
-    """
-    Model for user information
-    """
+class PasswordResetRequest(BaseModel):
+    """Body for requesting a self-hosted password-reset email."""
 
-    username: str
-    password: str
-    email: str
-    first_name: str
-    last_name: str
+    email: str = Field(..., description="Account email to send the reset link to")
 
 
 class UserInfo(BaseModel):
     preferred_username: str
     email: str | None = None
     full_name: str | None = None
-
-
-class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(..., description="Refresh token to obtain new access token")
-
-
-class LogoutRequest(BaseModel):
-    """
-    Model for logout request
-    """
-
-    refresh_token: str
-
-
-class DevTokenRequest(BaseModel):
-    """Body for the development-only password-grant endpoint.
-
-    Credentials are accepted in the request body (not as query parameters)
-    so they don't end up in access logs, browser history, or proxy logs.
-    """
-
-    username: str = Field(..., description="Keycloak username")
-    password: str = Field(..., description="Keycloak password")

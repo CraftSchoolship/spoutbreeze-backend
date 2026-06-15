@@ -87,7 +87,7 @@ def test_sqlalchemy_orm_roundtrip_preserves_columns_and_methods():
     """
     user = User()
     user.id = uuid4()
-    user.keycloak_id = "kc-123"
+    user.firebase_uid = "kc-123"
     user.username = "alice"
     user.email = "a@example.com"
     user.first_name = "Alice"
@@ -103,7 +103,7 @@ def test_sqlalchemy_orm_roundtrip_preserves_columns_and_methods():
     out = _roundtrip(user)
     assert isinstance(out, User)
     assert out.id == user.id
-    assert out.keycloak_id == "kc-123"
+    assert out.firebase_uid == "kc-123"
     assert out.username == "alice"
     # methods that depend on column data still work
     assert out.get_roles_list() == ["admin", "moderator"]
@@ -116,7 +116,7 @@ def test_list_of_orm_roundtrip():
     for i in range(3):
         u = User()
         u.id = uuid4()
-        u.keycloak_id = f"kc-{i}"
+        u.firebase_uid = f"kc-{i}"
         u.username = f"user{i}"
         u.email = f"u{i}@example.com"
         u.first_name = "F"

@@ -15,44 +15,14 @@ router = APIRouter(prefix="/api", tags=["Health"])
 auth_service = AuthService()
 
 
-# @router.get("/health")
-# async def health_check(response: Response) -> Dict[str, Any]:
-#     """
-#     Comprehensive health check endpoint
-#     """
-#     health_status: Dict[str, Any] = {
-#         "status": "healthy",
-#         "timestamp": datetime.now().isoformat(),
-#         "services": {},
-#     }
-
-#     # Check Keycloak
-#     keycloak_healthy = auth_service.health_check()
-#     health_status["services"]["keycloak"] = {
-#         "status": "healthy" if keycloak_healthy else "unhealthy",
-#         "url": auth_service.settings.keycloak_server_url,
-#     }
-
-#     # Overall status
-#     if not keycloak_healthy:
-#         health_status["status"] = "degraded"
-
-#     # Set appropriate status code
-#     if health_status["status"] != "healthy":
-#         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-
-#     return health_status
-
-
 @router.get("/health")
 async def health_check(response: Response) -> dict[str, str]:
     """
-    Simple health check endpoint that verifies Keycloak connectivity
+    Simple health check endpoint that verifies the auth backend (Firebase).
     """
-    # Check Keycloak
-    keycloak_healthy = await auth_service.health_check()
+    auth_healthy = await auth_service.health_check()
 
-    if keycloak_healthy:
+    if auth_healthy:
         return {"status": "healthy"}
     else:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -64,11 +34,10 @@ async def readiness_check() -> dict[str, Any]:
     """
     Readiness check - determines if the application is ready to serve traffic
     """
-    keycloak_ready = await auth_service.health_check()
+    auth_ready = await auth_service.health_check()
 
     return {
-        "status": "ready" if keycloak_ready else "not ready",
-        # "services": {"keycloak": keycloak_ready},
+        "status": "ready" if auth_ready else "not ready",
     }
 
 
