@@ -1,0 +1,27 @@
+{% extends "_base.html" %}
+{% block content %}
+  <p style="margin:0 0 12px 0;">
+    Welcome to BlueScale! Please confirm your email address by clicking the
+    button below.
+  </p>
+  <p style="margin:0 0 12px 0;color:#5f6368;">
+    If you didn't create a BlueScale account, you can safely ignore this email.
+  </p>
+{% endblock %}
+{% block cta %}
+  <tr>
+    <td style="padding:4px 28px 24px 28px;">
+      <a href="{{ data.verify_url }}"
+         style="display:inline-block;background:#1a73e8;color:#ffffff;text-decoration:none;
+                padding:12px 24px;border-radius:6px;font-size:15px;font-weight:600;">
+        Verify email address
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 28px 16px 28px;font-size:12px;line-height:1.5;color:#80868b;word-break:break-all;">
+      Or paste this link into your browser:<br>
+      <a href="{{ data.verify_url }}" style="color:#1a73e8;">{{ data.verify_url }}</a>
+    </td>
+  </tr>
+{% endblock %}

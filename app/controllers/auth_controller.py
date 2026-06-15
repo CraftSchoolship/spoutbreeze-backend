@@ -282,6 +282,43 @@ async def request_password_reset(request: Request, body: PasswordResetRequest, r
     return generic_response
 
 
+@router.post("/email/verify/send")
+@limiter.limit(lambda: settings.rate_limit_token)
+async def send_verification_email(
+    request: Request,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+):
+    """Send an email-verification link to the signed-in user's address.
+
+    Generates the Firebase verification code via the Admin SDK, embeds it in a
+    link to our own ``/auth/action`` page, and sends it through the configured
+    SMTP relay — so the email comes from our domain, not the Firebase sender.
+    """
+    email = current_user.email
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No email on file")
+
+    continue_url = f"{settings.frontend_url}/home"
+    oob_code = await auth_service.generate_email_verification_code(email, continue_url)
+
+    if oob_code:
+        verify_url = f"{settings.frontend_url}/auth/action?mode=verifyEmail&oobCode={oob_code}"
+        html_body = render_email(
+            "email_verification",
+            {"title": "Verify your email address", "data": {"verify_url": verify_url}},
+        )
+        await send_email(
+            recipient_email=email,
+            subject="Verify your BlueScale email address",
+            text_body=f"Confirm your email address using this link:\n\n{verify_url}\n\n"
+            "If you didn't create a BlueScale account, ignore this email.",
+            html_body=html_body,
+        )
+
+    return {"message": "Verification email sent."}
+
+
 @router.post("/logout")
 async def logout(
     request: Request,

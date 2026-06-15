@@ -131,6 +131,30 @@ class AuthService:
         codes = params.get("oobCode")
         return codes[0] if codes else None
 
+    async def generate_email_verification_code(self, email: str, continue_url: str) -> str | None:
+        """Generate an email-verification oobCode for ``email``.
+
+        Same approach as the password-reset code: we extract just the code from
+        the Admin-generated link and embed it in our own ``/auth/action`` URL so
+        the email never points at the Firebase-hosted handler. Returns ``None``
+        if the email isn't registered.
+        """
+        self._ensure_app()
+        try:
+            settings = fb_auth.ActionCodeSettings(url=continue_url)
+            link = await asyncio.to_thread(
+                fb_auth.generate_email_verification_link, email, settings
+            )
+        except fb_auth.UserNotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"Failed to generate email verification link: {e}")
+            return None
+
+        params = parse_qs(urlparse(link).query)
+        codes = params.get("oobCode")
+        return codes[0] if codes else None
+
     async def update_user_profile(self, user_id: str, user_data: dict[str, Any]) -> bool:
         """Update a user's Firebase profile (email / display name).
 
