@@ -238,8 +238,7 @@ async def update_my_organization_user_role(
         await auth_service.update_user_role(user_id=target_user.firebase_uid, new_role=new_role)
     except HTTPException as e:
         logger.warning(
-            f"[{request_id}] DB role updated, but Firebase claim sync failed "
-            f"for uid {target_user.firebase_uid}: {e.detail}"
+            f"[{request_id}] DB role updated, but Firebase claim sync failed for uid {target_user.firebase_uid}: {e.detail}"
         )
 
     return updated_user

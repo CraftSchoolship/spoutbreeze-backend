@@ -206,10 +206,7 @@ class AuthService:
             # attach a claim to; it self-heals on their next login, when
             # process_user_info rebinds the uid and re-syncs the claim. Signal
             # this distinctly (404) so callers can treat it as non-fatal.
-            logger.warning(
-                f"No Firebase account for uid {uid}; skipping roles claim "
-                f"(will sync on next login)"
-            )
+            logger.warning(f"No Firebase account for uid {uid}; skipping roles claim (will sync on next login)")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No Firebase account for uid {uid}",
