@@ -168,7 +168,8 @@ async def process_user_info(decoded_token: dict, body: SessionRequest, db: Async
 
     # Update the existing user. Only overwrite name fields when we actually
     # have a value, so we don't blank out a profile on a bare Google login.
-    if existing_user.firebase_uid != firebase_uid:
+    rebound = existing_user.firebase_uid != firebase_uid
+    if rebound:
         logger.info(
             f"Rebinding user {existing_user.id} from firebase_uid "
             f"{existing_user.firebase_uid} → {firebase_uid} (matched by email)"
@@ -187,6 +188,18 @@ async def process_user_info(decoded_token: dict, body: SessionRequest, db: Async
     await db.commit()
     await db.refresh(existing_user)
     logger.info(f"User updated: {existing_user.username}, firebase_uid={existing_user.firebase_uid}")
+
+    # If we just rebound a migrated user (e.g. from Keycloak) onto their live
+    # Firebase uid, push the DB roles into the new account's custom claim.
+    # Admin role changes made while the user still carried a stale uid couldn't
+    # be written to Firebase; this login is where that claim finally lands.
+    # Best-effort — the DB stays authoritative for the backend.
+    if rebound:
+        try:
+            await auth_service.set_roles_claim(firebase_uid, existing_user.get_roles_list())
+        except Exception as e:
+            logger.warning(f"Failed to sync roles claim after rebind for {firebase_uid}: {e}")
+
     return existing_user
 
 

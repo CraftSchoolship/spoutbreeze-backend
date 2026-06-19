@@ -199,6 +199,18 @@ class AuthService:
             claims["roles"] = roles
             await asyncio.to_thread(fb_auth.set_custom_user_claims, uid, claims)
             logger.info(f"Set roles claim {roles} for uid {uid}")
+        except fb_auth.UserNotFoundError:
+            # The uid has no live Firebase account — typically a user migrated
+            # from Keycloak who hasn't signed in under Firebase yet, so the
+            # stored uid is still their old Keycloak sub. There's no account to
+            # attach a claim to; it self-heals on their next login, when
+            # process_user_info rebinds the uid and re-syncs the claim. Signal
+            # this distinctly (404) so callers can treat it as non-fatal.
+            logger.warning(f"No Firebase account for uid {uid}; skipping roles claim (will sync on next login)")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No Firebase account for uid {uid}",
+            )
         except Exception as e:
             logger.error(f"Failed to set roles claim for uid {uid}: {e}")
             raise HTTPException(
