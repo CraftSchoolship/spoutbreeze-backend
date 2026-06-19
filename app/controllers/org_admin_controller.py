@@ -226,18 +226,22 @@ async def update_my_organization_user_role(
 
     logger.info(f"[{request_id}] Org admin {current_user.username} changing role of {target_user.username} to {new_role}")
 
-    # the auth backend first, then DB — same ordering as super-admin role updates so
-    # an auth backend failure leaves the DB untouched.
+    # The DB is the source of truth for app logic, so update it first, then
+    # mirror the role into the Firebase custom claim. The claim write is
+    # best-effort: a user migrated from Keycloak who hasn't signed in under
+    # Firebase yet has no Firebase account for their stored uid. The claim
+    # self-heals on their next login (process_user_info rebinds the uid), so
+    # don't fail the update over it. Matches the super-admin role endpoint.
+    updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
+
     try:
         await auth_service.update_user_role(user_id=target_user.firebase_uid, new_role=new_role)
     except HTTPException as e:
-        logger.error(f"[{request_id}] Role update failed: {e.detail}")
-        raise HTTPException(
-            status_code=e.status_code,
-            detail=f"Failed to update role: {e.detail}",
-        ) from e
+        logger.warning(
+            f"[{request_id}] DB role updated, but Firebase claim sync failed "
+            f"for uid {target_user.firebase_uid}: {e.detail}"
+        )
 
-    updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
     return updated_user
 
 

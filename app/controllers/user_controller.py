@@ -329,22 +329,25 @@ async def update_user_role(
                 detail="Cannot modify your own role",
             )
 
-        logger.info(f"[{request_id}] Updating role (custom claim) for user: {target_user.firebase_uid}")
+        logger.info(f"[{request_id}] Updating role in database for user: {target_user.username}")
 
-        # Update role (Firebase custom claim) first
+        # The DB is the source of truth for app logic (require_role reads it),
+        # so update it first.
+        updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
+
+        # Then mirror the role into the Firebase custom claim so it rides in the
+        # user's next ID token (the Next.js middleware reads it). Best-effort: a
+        # user migrated from Keycloak who hasn't signed in under Firebase yet
+        # has no Firebase account for their stored uid, so the claim can't be
+        # written. It self-heals on their next login, so don't fail the whole
+        # update over it.
         try:
             await auth_service.update_user_role(user_id=target_user.firebase_uid, new_role=new_role)
         except HTTPException as e:
-            logger.error(f"[{request_id}] Role update failed: {e.detail}")
-            raise HTTPException(
-                status_code=e.status_code,
-                detail=f"Failed to update role: {e.detail}",
+            logger.warning(
+                f"[{request_id}] DB role updated, but Firebase claim sync failed "
+                f"for uid {target_user.firebase_uid}: {e.detail}"
             )
-
-        logger.info(f"[{request_id}] Updating role in database for user: {target_user.username}")
-
-        # Update role in the database using cached service
-        updated_user = await user_service_cached.update_user_role(user_id=user_id, new_role=new_role, db=db)
 
         logger.info(f"[{request_id}] Role update completed successfully for user: {target_user.username}")
         return updated_user
