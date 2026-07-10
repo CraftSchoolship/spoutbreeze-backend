@@ -20,7 +20,15 @@ _DNS_TIMEOUT_SECONDS = 5.0
 
 
 def verification_record_name(domain: str) -> str:
-    """The fully-qualified DNS name the org admin must publish a TXT record at."""
+    """The fully-qualified DNS name the org admin must publish a TXT record at.
+
+    Shown to the admin verbatim and resolved as-is during verification. This is
+    the full name (``_bluescale-verify.<domain>``) rather than the bare prefix:
+    providers that auto-append the zone (OVH, Route 53) want the prefix only,
+    but providers that treat the Host literally (e.g. Namecheap) need the full
+    name — and the full name is the more standard, least-surprising default.
+    The UI tells auto-appending providers to drop the domain part.
+    """
     return f"{VERIFICATION_RECORD_PREFIX}.{domain}"
 
 
