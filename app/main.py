@@ -21,6 +21,7 @@ from app.controllers.auth_controller import router as auth_router
 from app.controllers.bbb_controller import router as bbb_router
 from app.controllers.broadcaster_controller import router as broadcaster_router
 from app.controllers.channels_controller import router as channels_router
+from app.controllers.contact_controller import router as contact_router
 from app.controllers.event_controller import router as event_router
 from app.controllers.facebook_controller import router as facebook_router
 from app.controllers.facebook_stream_controller import router as facebook_stream_router
@@ -258,6 +259,7 @@ async def test_endpoint():
 # Register routers
 app.include_router(internal_router)
 app.include_router(health_router)
+app.include_router(contact_router)
 app.include_router(auth_router)
 app.include_router(twitch_router, prefix="/api")
 app.include_router(youtube_router, prefix="/api")
