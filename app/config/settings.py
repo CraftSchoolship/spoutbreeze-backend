@@ -111,6 +111,9 @@ class Settings(BaseSettings):
     smtp_from_name: str = "bluescale"
     smtp_use_starttls: bool = True
 
+    # Recipient for landing-page contact messages; falls back to smtp_from_email.
+    contact_email: str = "contact@craftschoolship.com"
+
     # ``extra="ignore"`` so leftover environment variables (e.g. the retired
     # KEYCLOAK_* / SSL_* keys still present in deployment configs during the
     # Firebase migration) don't crash startup. Remove them from the Helm
