@@ -3,12 +3,13 @@ landing page to the team inbox via the configured SMTP relay."""
 
 import html
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from app.config.logger_config import get_logger
 from app.config.settings import get_settings
 from app.utils.email import send_email
+from app.utils.rate_limit import limiter
 
 router = APIRouter(prefix="/api", tags=["Contact"])
 
@@ -23,7 +24,8 @@ class ContactRequest(BaseModel):
 
 
 @router.post("/contact")
-async def contact_founders(payload: ContactRequest) -> dict[str, str]:
+@limiter.limit(lambda: settings.rate_limit_contact)
+async def contact_founders(request: Request, payload: ContactRequest) -> dict[str, str]:
     """
     Accept a message from the public landing page and email it to the team.
     """
