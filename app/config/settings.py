@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     cache_ttl_long: int = 3600  # 1 hour
     cache_ttl_user: int = 900  # 15 minutes
     cache_ttl_bbb: int = 180  # 3 minutes (BBB data changes frequently)
+    # Admin/org analytics overview. Short TTL: the dashboard polls on a timer,
+    # so this absorbs repeated ~30-query recomputes while staying near-live (N2).
+    cache_ttl_analytics: int = 60  # 1 minute
 
     # Chat Gateway settings
     chat_gateway_url: str = "http://localhost:8081"

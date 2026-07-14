@@ -151,17 +151,19 @@ async def get_my_organization_overview(
     """
     Analytics snapshot scoped to the caller's organization.
 
-    Wraps the existing ``AdminAnalyticsService.get_overview`` with an
-    ``org_filter`` of the caller's organization. The ``organizations``
-    rollup field is overwritten to contain only the caller's org row so an
-    org admin cannot see other organizations' totals.
+    Wraps ``AdminAnalyticsService.get_overview`` with the caller's org as the
+    ``org_filter`` and ``scope_org_rollup=True`` so both the per-tab metrics
+    and the ``organizations`` rollup are computed for the caller's org alone —
+    an org admin never sees (or triggers the computation of) other orgs'
+    totals.
     """
-    data = await AdminAnalyticsService.get_overview(db, current_user.organization_id)
-
-    # Strip the platform-wide rollup down to just the caller's own org so
-    # an org admin can't enumerate other organizations' metrics.
-    org_id_str = str(current_user.organization_id)
-    data["organizations"] = [row for row in data["organizations"] if row.get("id") and str(row["id"]) == org_id_str]
+    # ``scope_org_rollup=True`` makes the service compute only this org's
+    # rollup row rather than the full platform rollup that we then filter in
+    # Python — so an org admin can neither see nor cause the computation of
+    # other organizations' metrics (N3).
+    data = await AdminAnalyticsService.get_overview(
+        db, current_user.organization_id, scope_org_rollup=True
+    )
     return AnalyticsOverview.model_validate(data)
 
 
