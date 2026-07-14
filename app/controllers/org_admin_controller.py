@@ -161,9 +161,7 @@ async def get_my_organization_overview(
     # rollup row rather than the full platform rollup that we then filter in
     # Python — so an org admin can neither see nor cause the computation of
     # other organizations' metrics (N3).
-    data = await AdminAnalyticsService.get_overview(
-        db, current_user.organization_id, scope_org_rollup=True
-    )
+    data = await AdminAnalyticsService.get_overview(db, current_user.organization_id, scope_org_rollup=True)
     return AnalyticsOverview.model_validate(data)
 
 
