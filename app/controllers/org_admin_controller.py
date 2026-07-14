@@ -375,16 +375,12 @@ async def create_my_organization(
     # `admin` role in Firebase. If this fails, roll the whole transaction back
     # so we never persist an org whose owner didn't get the matching claim —
     # neither an orphaned org nor an orphaned grant is left behind (F2).
-    logger.info(
-        f"[{request_id}] Granting admin role in Firebase for {current_user.username} for org '{payload.name}'"
-    )
+    logger.info(f"[{request_id}] Granting admin role in Firebase for {current_user.username} for org '{payload.name}'")
     try:
         await auth_service.update_user_role(user_id=current_user.firebase_uid, new_role="admin")
     except Exception:
         await db.rollback()
-        logger.error(
-            f"[{request_id}] Firebase admin grant failed; rolled back org '{payload.name}' (no changes persisted)"
-        )
+        logger.error(f"[{request_id}] Firebase admin grant failed; rolled back org '{payload.name}' (no changes persisted)")
         raise
 
     # Step 3: Commit org + domain + invite + user mutations together.

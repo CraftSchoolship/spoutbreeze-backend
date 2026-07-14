@@ -103,9 +103,7 @@ async def test_unverified_new_user_is_not_auto_assigned_to_org(db_session):
 async def test_verified_new_user_is_auto_assigned_to_org(db_session):
     """The happy path still works: a verified email on a claimed domain joins."""
     org = Organization(name="GoodCorp")
-    org.email_domains = [
-        OrganizationEmailDomain(domain="goodcorp.com", verified_at=utcnow())
-    ]
+    org.email_domains = [OrganizationEmailDomain(domain="goodcorp.com", verified_at=utcnow())]
     db_session.add(org)
     await db_session.commit()
 
