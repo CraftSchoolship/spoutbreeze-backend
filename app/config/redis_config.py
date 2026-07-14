@@ -217,12 +217,26 @@ class RedisCache:
             return False
 
     async def delete_pattern(self, pattern: str) -> bool:
+        """Delete every key matching a glob ``pattern``.
+
+        Uses cursor-based ``SCAN`` (via ``scan_iter``) instead of the blocking
+        ``KEYS`` command, so cache invalidation never stalls Redis for the
+        duration of a full-keyspace scan — this matters because every
+        cache-invalidation path and the rate limiter share this one client.
+        Matched keys are removed in batches to bound the size of any single
+        ``DEL``.
+        """
         if not self.redis_client:
             return False
         try:
-            keys = await self.redis_client.keys(pattern)
-            if keys:
-                await self.redis_client.delete(*keys)
+            batch: list[Any] = []
+            async for key in self.redis_client.scan_iter(match=pattern, count=500):
+                batch.append(key)
+                if len(batch) >= 500:
+                    await self.redis_client.delete(*batch)
+                    batch.clear()
+            if batch:
+                await self.redis_client.delete(*batch)
             return True
         except Exception as e:
             logger.error(f"DEL pattern {pattern} error: {e}")

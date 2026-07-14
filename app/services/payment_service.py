@@ -4,6 +4,7 @@ Handles all Stripe-related operations including subscription management,
 checkout sessions, customer portal, and webhook processing.
 """
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -54,7 +55,8 @@ class PaymentService:
 
         # Create new Stripe customer
         try:
-            customer = stripe.Customer.create(
+            customer = await asyncio.to_thread(
+                stripe.Customer.create,
                 email=user.email,
                 name=f"{user.first_name} {user.last_name}",
                 metadata={
@@ -140,7 +142,7 @@ class PaymentService:
             if price_id == settings.stripe_free_price_id:
                 checkout_params["subscription_data"]["trial_period_days"] = 14
 
-            session = stripe.checkout.Session.create(**checkout_params)  # type: ignore[arg-type]
+            session = await asyncio.to_thread(stripe.checkout.Session.create, **checkout_params)  # type: ignore[arg-type]
 
             logger.info(f"Created checkout session {session.id} for user {user.id}")
 
@@ -172,7 +174,8 @@ class PaymentService:
                 )
 
             # Create portal session
-            session = stripe.billing_portal.Session.create(
+            session = await asyncio.to_thread(
+                stripe.billing_portal.Session.create,
                 customer=subscription.stripe_customer_id,
                 return_url=return_url,
             )
@@ -217,7 +220,7 @@ class PaymentService:
 
         try:
             # Get latest non-canceled subscription for this customer
-            stripe_subs = stripe.Subscription.list(customer=customer_id, status="all", limit=10)
+            stripe_subs = await asyncio.to_thread(stripe.Subscription.list, customer=customer_id, status="all", limit=10)
             items = stripe_subs.get("data", []) if isinstance(stripe_subs, dict) else stripe_subs.data
             candidates = [s for s in items if s.get("status") != "canceled"]
             if not candidates:
@@ -367,7 +370,9 @@ class PaymentService:
 
             # Always cancel at period end — no refund, access continues until expiry
             if subscription.stripe_subscription_id:
-                stripe.Subscription.modify(subscription.stripe_subscription_id, cancel_at_period_end=True)
+                await asyncio.to_thread(
+                    stripe.Subscription.modify, subscription.stripe_subscription_id, cancel_at_period_end=True
+                )
                 subscription.cancel_at_period_end = True
 
             await db.commit()
@@ -811,7 +816,8 @@ class PaymentService:
             return []
 
         try:
-            stripe_invoices = stripe.Invoice.list(
+            stripe_invoices = await asyncio.to_thread(
+                stripe.Invoice.list,
                 customer=subscription.stripe_customer_id,
                 limit=100,
             )

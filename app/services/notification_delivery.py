@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+import ssl
 from abc import ABC, abstractmethod
 from email.message import EmailMessage
 from typing import Any
@@ -103,16 +104,20 @@ class EmailDeliveryBackend(DeliveryBackend):
         if html_body:
             message.add_alternative(html_body, subtype="html")
 
+        # Verified TLS: smtplib builds an UNVERIFIED context when none is passed,
+        # so always supply a verified default context (F3).
+        ssl_context = ssl.create_default_context()
+
         def _send_sync() -> None:
             if settings.smtp_use_starttls:
                 with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
                     server.ehlo()
-                    server.starttls()
+                    server.starttls(context=ssl_context)
                     server.ehlo()
                     server.login(settings.smtp_username, settings.smtp_password)
                     server.send_message(message)
             else:
-                with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+                with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20, context=ssl_context) as server:
                     server.ehlo()
                     server.login(settings.smtp_username, settings.smtp_password)
                     server.send_message(message)

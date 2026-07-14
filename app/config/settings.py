@@ -57,9 +57,13 @@ class Settings(BaseSettings):
     # authenticated ones.
     rate_limit_enabled: bool = True
     rate_limit_token: str = "20/minute"
-    rate_limit_refresh: str = "30/minute"
-    rate_limit_dev_token: str = "5/minute"
     rate_limit_payments: str = "60/minute"
+    # Tight limit for endpoints that dispatch an outbound email to an
+    # attacker-supplied address (password reset, verification resend) — guards
+    # against using them to email-bomb a known victim (F4).
+    rate_limit_email: str = "3/minute"
+    # Self-serve org creation mutates Firebase + DB per call; cap it (N5).
+    rate_limit_org_create: str = "5/minute"
 
     # Environment settings
     env: str = "development"
@@ -79,6 +83,9 @@ class Settings(BaseSettings):
     cache_ttl_long: int = 3600  # 1 hour
     cache_ttl_user: int = 900  # 15 minutes
     cache_ttl_bbb: int = 180  # 3 minutes (BBB data changes frequently)
+    # Admin/org analytics overview. Short TTL: the dashboard polls on a timer,
+    # so this absorbs repeated ~30-query recomputes while staying near-live (N2).
+    cache_ttl_analytics: int = 60  # 1 minute
 
     # Chat Gateway settings
     chat_gateway_url: str = "http://localhost:8081"

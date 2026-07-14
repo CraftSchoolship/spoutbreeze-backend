@@ -7,6 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.logger_config import get_logger
+from app.config.redis_config import cached_db
+from app.config.settings import get_settings
 from app.models.bbb_models import BbbMeeting
 from app.models.connection_model import Connection
 from app.models.event.event_models import Event, EventStatus
@@ -17,6 +19,7 @@ from app.models.user_models import User
 from app.utils.datetime_utils import utcnow
 
 logger = get_logger("AdminAnalyticsService")
+settings = get_settings()
 
 # Sentinel value for the "no organization" bucket in filter inputs.
 UNASSIGNED = "unassigned"
@@ -331,20 +334,33 @@ class AdminAnalyticsService:
         }
 
     @staticmethod
-    async def _organizations_stats(db: AsyncSession) -> list[dict]:
+    async def _organizations_stats(db: AsyncSession, only_org: UUID | None = None) -> list[dict]:
         """
-        Per-organization rollup. One row per existing Organization plus a
-        synthetic "Unassigned" row (id=None) aggregating users with
-        ``organization_id IS NULL``. Each metric is one GROUP BY query,
-        stitched in Python — matches the existing one-query-per-metric style.
+        Per-organization rollup, stitched from one GROUP BY query per metric.
+
+        Platform mode (``only_org is None``): one row per existing Organization
+        plus a synthetic "Unassigned" row (id=None) aggregating users with
+        ``organization_id IS NULL``.
+
+        Scoped mode (``only_org`` set): compute ONLY that organization's row.
+        Org admins hit this path, so every GROUP BY is filtered to the single
+        org instead of computing the whole platform rollup and discarding all
+        but one row (N3).
         """
         now = utcnow()
         d30 = now - timedelta(days=30)
 
-        orgs_rows = (await db.execute(select(Organization.id, Organization.name))).all()
-        rows: dict[object, dict] = {}
-        for org_id, name in orgs_rows:
-            rows[org_id] = {
+        def _scope(stmt):
+            """Restrict a User-rooted GROUP BY query to the single scoped org."""
+            return stmt.where(User.organization_id == only_org) if only_org is not None else stmt
+
+        org_q = select(Organization.id, Organization.name)
+        if only_org is not None:
+            org_q = org_q.where(Organization.id == only_org)
+        orgs_rows = (await db.execute(org_q)).all()
+
+        def _blank(org_id, name) -> dict:
+            return {
                 "id": org_id,
                 "name": name,
                 "user_count": 0,
@@ -355,124 +371,155 @@ class AdminAnalyticsService:
                 "active_subscriptions": 0,
                 "revenue_30d_usd": 0.0,
             }
-        rows[None] = {
-            "id": None,
-            "name": "Unassigned",
-            "user_count": 0,
-            "active_users": 0,
-            "events_total": 0,
-            "bbb_meetings_total": 0,
-            "streams_30d": 0,
-            "active_subscriptions": 0,
-            "revenue_30d_usd": 0.0,
-        }
+
+        rows: dict[object, dict] = {org_id: _blank(org_id, name) for org_id, name in orgs_rows}
+        # The Unassigned bucket only exists in platform mode.
+        if only_org is None:
+            rows[None] = _blank(None, "Unassigned")
 
         def _bucket(org_id):
-            # Orgs may have been deleted between metric queries — fall back to Unassigned.
-            return rows.get(org_id, rows[None])
+            # Orgs may have been deleted between metric queries; in platform mode
+            # fall back to Unassigned, in scoped mode skip (None).
+            b = rows.get(org_id)
+            if b is None and only_org is None:
+                b = rows.get(None)
+            return b
+
+        def _assign(rows_result, key):
+            for org_id, value in rows_result:
+                b = _bucket(org_id)
+                if b is not None:
+                    b[key] = value
 
         user_counts = (
-            await db.execute(select(User.organization_id, func.count(User.id)).group_by(User.organization_id))
+            await db.execute(_scope(select(User.organization_id, func.count(User.id)).group_by(User.organization_id)))
         ).all()
-        for org_id, count in user_counts:
-            _bucket(org_id)["user_count"] = count
+        _assign(user_counts, "user_count")
 
         active_user_counts = (
             await db.execute(
-                select(User.organization_id, func.count(User.id))
-                .where(User.is_active.is_(True))
-                .group_by(User.organization_id)
+                _scope(
+                    select(User.organization_id, func.count(User.id))
+                    .where(User.is_active.is_(True))
+                    .group_by(User.organization_id)
+                )
             )
         ).all()
-        for org_id, count in active_user_counts:
-            _bucket(org_id)["active_users"] = count
+        _assign(active_user_counts, "active_users")
 
         event_counts = (
             await db.execute(
-                select(User.organization_id, func.count(Event.id))
-                .join(User, Event.creator_id == User.id)
-                .group_by(User.organization_id)
+                _scope(
+                    select(User.organization_id, func.count(Event.id))
+                    .join(User, Event.creator_id == User.id)
+                    .group_by(User.organization_id)
+                )
             )
         ).all()
-        for org_id, count in event_counts:
-            _bucket(org_id)["events_total"] = count
+        _assign(event_counts, "events_total")
 
         bbb_counts = (
             await db.execute(
-                select(User.organization_id, func.count(BbbMeeting.id))
-                .join(User, BbbMeeting.user_id == User.id)
-                .group_by(User.organization_id)
+                _scope(
+                    select(User.organization_id, func.count(BbbMeeting.id))
+                    .join(User, BbbMeeting.user_id == User.id)
+                    .group_by(User.organization_id)
+                )
             )
         ).all()
-        for org_id, count in bbb_counts:
-            _bucket(org_id)["bbb_meetings_total"] = count
+        _assign(bbb_counts, "bbb_meetings_total")
 
         stream_counts = (
             await db.execute(
-                select(User.organization_id, func.count(StreamSession.id))
-                .join(User, StreamSession.user_id == User.id)
-                .where(StreamSession.started_at >= d30)
-                .group_by(User.organization_id)
+                _scope(
+                    select(User.organization_id, func.count(StreamSession.id))
+                    .join(User, StreamSession.user_id == User.id)
+                    .where(StreamSession.started_at >= d30)
+                    .group_by(User.organization_id)
+                )
             )
         ).all()
-        for org_id, count in stream_counts:
-            _bucket(org_id)["streams_30d"] = count
+        _assign(stream_counts, "streams_30d")
 
         sub_counts = (
             await db.execute(
-                select(User.organization_id, func.count(Subscription.id))
-                .join(User, Subscription.user_id == User.id)
-                .where(Subscription.status.in_([SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIALING.value]))
-                .group_by(User.organization_id)
+                _scope(
+                    select(User.organization_id, func.count(Subscription.id))
+                    .join(User, Subscription.user_id == User.id)
+                    .where(Subscription.status.in_([SubscriptionStatus.ACTIVE.value, SubscriptionStatus.TRIALING.value]))
+                    .group_by(User.organization_id)
+                )
             )
         ).all()
-        for org_id, count in sub_counts:
-            _bucket(org_id)["active_subscriptions"] = count
+        _assign(sub_counts, "active_subscriptions")
 
         revenue_rows = (
             await db.execute(
-                select(User.organization_id, func.coalesce(func.sum(Transaction.amount), 0.0))
-                .join(Subscription, Transaction.subscription_id == Subscription.id)
-                .join(User, Subscription.user_id == User.id)
-                .where(
-                    Transaction.created_at >= d30,
-                    Transaction.transaction_type == "payment",
-                    Transaction.status.in_(["succeeded", "paid", "complete"]),
+                _scope(
+                    select(User.organization_id, func.coalesce(func.sum(Transaction.amount), 0.0))
+                    .join(Subscription, Transaction.subscription_id == Subscription.id)
+                    .join(User, Subscription.user_id == User.id)
+                    .where(
+                        Transaction.created_at >= d30,
+                        Transaction.transaction_type == "payment",
+                        Transaction.status.in_(["succeeded", "paid", "complete"]),
+                    )
+                    .group_by(User.organization_id)
                 )
-                .group_by(User.organization_id)
             )
         ).all()
         for org_id, amount in revenue_rows:
-            _bucket(org_id)["revenue_30d_usd"] = float(amount or 0.0)
+            b = _bucket(org_id)
+            if b is not None:
+                b["revenue_30d_usd"] = float(amount or 0.0)
 
-        # Stable display order: real orgs A→Z, then Unassigned last.
+        # Scoped mode returns just the one org's row (or empty if it vanished).
+        if only_org is not None:
+            return list(rows.values())
+
+        # Platform mode: real orgs A→Z, then Unassigned last (only if it has signal).
         out = sorted(
             (r for k, r in rows.items() if k is not None),
             key=lambda r: r["name"].lower(),
         )
         unassigned = rows[None]
-        # Only include the Unassigned row if it has any signal — keeps a clean dashboard
-        # while still surfacing the bucket the moment there are unassigned users.
         if any(unassigned[k] for k in ("user_count", "events_total", "bbb_meetings_total", "streams_30d")):
             out.append(unassigned)
         return out
 
     @classmethod
-    async def get_overview(cls, db: AsyncSession, org_filter: OrgFilter = None) -> dict:
+    @cached_db(ttl=settings.cache_ttl_analytics, key_prefix="admin_overview")
+    async def get_overview(
+        cls,
+        db: AsyncSession,
+        org_filter: OrgFilter = None,
+        *,
+        scope_org_rollup: bool = False,
+    ) -> dict:
         """
         Build the admin dashboard payload.
 
         ``org_filter`` scopes the per-tab metrics (users, events, streaming,
         revenue) to a single organization (UUID), to the Unassigned bucket
-        (``"unassigned"``), or to the whole platform (``None``). The
-        ``organizations`` rollup is always platform-wide — it IS the
-        breakdown view, so it would be meaningless to filter it.
+        (``"unassigned"``), or to the whole platform (``None``).
+
+        The ``organizations`` rollup defaults to platform-wide — it IS the
+        super-admin breakdown view. Set ``scope_org_rollup=True`` (org-admin
+        path) to compute ONLY the caller's org row instead of the full
+        platform rollup (N3); this only applies when ``org_filter`` is a UUID.
+
+        Cached for ``cache_ttl_analytics`` seconds keyed by ``(org_filter,
+        scope_org_rollup)`` (N2) — the ``AsyncSession`` is excluded from the
+        key by ``cached_db``. Invalidation is TTL-only: the payload aggregates
+        many tables, so a short expiry is simpler and safer than wiring cache
+        busts into every mutation path.
         """
+        only_org = org_filter if (scope_org_rollup and isinstance(org_filter, UUID)) else None
         return {
             "generated_at": utcnow(),
             "users": await cls._users_stats(db, org_filter),
             "events": await cls._events_stats(db, org_filter),
             "streaming": await cls._streaming_stats(db, org_filter),
             "revenue": await cls._revenue_stats(db, org_filter),
-            "organizations": await cls._organizations_stats(db),
+            "organizations": await cls._organizations_stats(db, only_org),
         }

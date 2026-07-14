@@ -99,6 +99,7 @@ async def process_user_info(decoded_token: dict, body: SessionRequest, db: Async
     """
     firebase_uid = str(decoded_token.get("uid") or decoded_token.get("sub"))
     email = str(decoded_token.get("email", "")).strip().lower()
+    email_verified = bool(decoded_token.get("email_verified"))
 
     # Match by firebase_uid first, then fall back to email. The email fallback
     # reconciles a row that exists under a stale/migrated uid (e.g. the user was
@@ -106,13 +107,31 @@ async def process_user_info(decoded_token: dict, body: SessionRequest, db: Async
     # proves control of this email, so the live Firebase uid is authoritative
     # and we rebind the existing row to it instead of colliding on the unique
     # email constraint.
+    #
+    # SECURITY: the email fallback rebinds an existing account (its roles and
+    # organization) to the caller's uid, so it MUST require a verified email.
+    # Firebase lets anyone register an as-yet-unclaimed address without
+    # verifying it; without this gate an attacker could sign up under a
+    # victim's email and inherit their account on first sign-in (account
+    # takeover / privilege escalation). A verified email proves control.
     stmt = select(User).where(User.firebase_uid == firebase_uid)
     result = await db.execute(stmt)
     existing_user = result.scalars().first()
 
     if existing_user is None and email:
         by_email = await db.execute(select(User).where(User.email == email))
-        existing_user = by_email.scalars().first()
+        matched_by_email = by_email.scalars().first()
+        if matched_by_email is not None:
+            if not email_verified:
+                logger.warning(
+                    f"Refusing to bind existing account {matched_by_email.id} ({email}) "
+                    f"to uid {firebase_uid}: email is not verified"
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Please verify your email address before signing in.",
+                )
+            existing_user = matched_by_email
 
     user_roles = extract_firebase_roles(decoded_token)
     first_name, last_name = _split_name(decoded_token, body)
@@ -130,8 +149,10 @@ async def process_user_info(decoded_token: dict, body: SessionRequest, db: Async
             new_user.set_roles_list(user_roles)
 
         # Auto-assign organization by verified email domain (first login only).
+        # Requires a verified email: an unverified address must not grant
+        # membership in an organization that owns its domain (F1).
         domain = email.rpartition("@")[-1].strip().lower()
-        if domain:
+        if domain and email_verified:
             domain_row = await db.execute(
                 select(OrganizationEmailDomain).where(
                     OrganizationEmailDomain.domain == domain,
@@ -261,7 +282,7 @@ async def create_session(
 
 
 @router.post("/password-reset")
-@limiter.limit(lambda: settings.rate_limit_token)
+@limiter.limit(lambda: settings.rate_limit_email)
 async def request_password_reset(request: Request, body: PasswordResetRequest, response: Response):
     """Send a self-hosted password-reset email.
 
@@ -296,7 +317,7 @@ async def request_password_reset(request: Request, body: PasswordResetRequest, r
 
 
 @router.post("/email/verify/send")
-@limiter.limit(lambda: settings.rate_limit_token)
+@limiter.limit(lambda: settings.rate_limit_email)
 async def send_verification_email(
     request: Request,
     response: Response,

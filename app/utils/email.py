@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 from app.config.logger_config import get_logger
@@ -39,16 +40,21 @@ async def send_email(
     if html_body:
         message.add_alternative(html_body, subtype="html")
 
+    # Verified TLS: smtplib does NOT verify certificates when context is None
+    # (it builds an unverified stdlib context), which would leave the reset-link
+    # code and SMTP credentials open to a MITM. Always pass a verified context.
+    ssl_context = ssl.create_default_context()
+
     def _send_sync() -> None:
         if settings.smtp_use_starttls:
             with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as server:
                 server.ehlo()
-                server.starttls()
+                server.starttls(context=ssl_context)
                 server.ehlo()
                 server.login(settings.smtp_username, settings.smtp_password)
                 server.send_message(message)
         else:
-            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20) as server:
+            with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20, context=ssl_context) as server:
                 server.ehlo()
                 server.login(settings.smtp_username, settings.smtp_password)
                 server.send_message(message)

@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import uuid
 from uuid import UUID
@@ -247,7 +248,7 @@ async def delete_user_by_admin(
             if subscription and subscription.stripe_subscription_id:
                 import stripe
 
-                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                await asyncio.to_thread(stripe.Subscription.cancel, subscription.stripe_subscription_id)
                 logger.info(f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}")
         except Exception as e:
             logger.warning(f"[{request_id}] Failed to cancel Stripe subscription (continuing): {str(e)}")
@@ -588,7 +589,7 @@ async def delete_account(
             if subscription and subscription.stripe_subscription_id:
                 import stripe
 
-                stripe.Subscription.cancel(subscription.stripe_subscription_id)
+                await asyncio.to_thread(stripe.Subscription.cancel, subscription.stripe_subscription_id)
                 logger.info(f"[{request_id}] Cancelled Stripe subscription {subscription.stripe_subscription_id}")
         except Exception as e:
             # Log but don't fail — subscription cleanup is best-effort
