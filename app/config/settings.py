@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     rate_limit_email: str = "3/minute"
     # Self-serve org creation mutates Firebase + DB per call; cap it (N5).
     rate_limit_org_create: str = "5/minute"
+    # Public, unauthenticated landing-page contact form dispatches an SMTP
+    # email per call — tight per-IP cap so it can't be looped to flood the
+    # team inbox or burn the SMTP send budget (N14).
+    rate_limit_contact: str = "3/minute"
 
     # Environment settings
     env: str = "development"
