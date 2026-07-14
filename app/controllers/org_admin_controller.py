@@ -14,8 +14,6 @@ existing ``/api/admin/*`` endpoints; this controller is intentionally
 scoped to a single org and never reveals platform-wide data.
 """
 
-from __future__ import annotations
-
 import secrets
 import uuid
 from uuid import UUID
@@ -28,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.config.database.session import get_db
 from app.config.logger_config import get_logger
+from app.config.settings import get_settings
 from app.models.admin_schemas import AnalyticsOverview
 from app.models.organization_models import (
     Organization,
@@ -56,7 +55,9 @@ from app.services.org_verification_service import (
     verify_domain_record,
 )
 from app.utils.datetime_utils import utcnow
+from app.utils.rate_limit import limiter
 
+settings = get_settings()
 logger = get_logger("OrgAdminController")
 auth_service = AuthService()
 
@@ -293,6 +294,7 @@ def _new_invite_code() -> str:
     response_model=CreateMyOrgResponse,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit(lambda: settings.rate_limit_org_create)
 async def create_my_organization(
     payload: CreateMyOrgRequest,
     request: Request,
@@ -322,19 +324,11 @@ async def create_my_organization(
             detail=("You already belong to an organization. Leave or be reassigned before creating a new one."),
         )
 
-    # Step 1: Promote the caller to `admin` in Firebase FIRST. If this fails,
-    # we never touch the DB — no half-created orgs, no orphan admins. The
-    # auth_service raises HTTPException on failure which propagates as-is to
-    # the client (typically a 500 with the auth backend error detail).
-    logger.info(
-        f"[{request_id}] Granting admin role in Firebase for {current_user.username} before creating org '{payload.name}'"
-    )
-    await auth_service.update_user_role(user_id=current_user.firebase_uid, new_role="admin")
-
-    # Step 2: Atomic DB transaction — org + domain + invite + user mutations
-    # all commit together. If anything fails here we still have the Firebase
-    # admin grant in place (acceptable; idempotent on retry, and the user
-    # can be assigned an org later by a super-admin).
+    # Step 1: Create and validate the org in the DB FIRST (the flush enforces
+    # the name/domain uniqueness constraints) but do NOT commit yet. Ordering
+    # the DB validation ahead of the Firebase role grant means a name/domain
+    # conflict can no longer leave the caller with an orphaned `admin` claim
+    # (F2 — previously the Firebase grant ran first and survived a DB rollback).
     token = secrets.token_urlsafe(24)
     now = utcnow()
     org = Organization(name=payload.name)
@@ -377,11 +371,28 @@ async def create_my_organization(
     )
     db.add(invite)
 
+    # Step 2: With the DB mutations staged and validated, grant the caller the
+    # `admin` role in Firebase. If this fails, roll the whole transaction back
+    # so we never persist an org whose owner didn't get the matching claim —
+    # neither an orphaned org nor an orphaned grant is left behind (F2).
+    logger.info(
+        f"[{request_id}] Granting admin role in Firebase for {current_user.username} for org '{payload.name}'"
+    )
+    try:
+        await auth_service.update_user_role(user_id=current_user.firebase_uid, new_role="admin")
+    except Exception:
+        await db.rollback()
+        logger.error(
+            f"[{request_id}] Firebase admin grant failed; rolled back org '{payload.name}' (no changes persisted)"
+        )
+        raise
+
+    # Step 3: Commit org + domain + invite + user mutations together.
     await db.commit()
     await db.refresh(org, attribute_names=["email_domains"])
     await db.refresh(target_user)
 
-    # Step 3: invalidate caches so the next /api/me read reflects the new
+    # Step 4: invalidate caches so the next /api/me read reflects the new
     # role + org assignment. Best-effort; a Redis blip can't roll back the
     # successful commit above.
     try:
@@ -389,8 +400,8 @@ async def create_my_organization(
     except Exception as e:
         logger.warning(f"[{request_id}] Cache invalidation after org create failed: {e}")
 
-    # Step 4: the new `admin` role was written as a Firebase custom claim in
-    # Step 1, but the caller's CURRENT session cookie was minted from an ID
+    # Step 5: the new `admin` role was written as a Firebase custom claim in
+    # Step 2, but the caller's CURRENT session cookie was minted from an ID
     # token issued BEFORE that claim existed, so it still says `moderator`.
     # Firebase custom claims only appear after the client force-refreshes its
     # ID token. The frontend therefore re-establishes the session right after

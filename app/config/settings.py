@@ -57,9 +57,13 @@ class Settings(BaseSettings):
     # authenticated ones.
     rate_limit_enabled: bool = True
     rate_limit_token: str = "20/minute"
-    rate_limit_refresh: str = "30/minute"
-    rate_limit_dev_token: str = "5/minute"
     rate_limit_payments: str = "60/minute"
+    # Tight limit for endpoints that dispatch an outbound email to an
+    # attacker-supplied address (password reset, verification resend) — guards
+    # against using them to email-bomb a known victim (F4).
+    rate_limit_email: str = "3/minute"
+    # Self-serve org creation mutates Firebase + DB per call; cap it (N5).
+    rate_limit_org_create: str = "5/minute"
 
     # Environment settings
     env: str = "development"
